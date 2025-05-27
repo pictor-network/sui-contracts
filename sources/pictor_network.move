@@ -1,6 +1,9 @@
 module pictor_network::pictor_network;
 
 use sui::table::{Self, Table};
+use std::debug;
+use sui::test_scenario::{Self, ctx};
+use sui::test_utils;
 
 const EUserRegistered: u64 = 0;
 const EUserNotRegistered: u64 = 1;
@@ -19,8 +22,7 @@ public struct OperatorCap has key {
     id: UID,
 }
 
-public struct UserInfo has key, store {
-    id: UID,
+public struct UserInfo has store {
     balance: u64,
     credit: u64,
 }
@@ -67,7 +69,10 @@ fun init(ctx: &mut TxContext) {
         jobs: table::new<vector<u8>, Job>(ctx),
         power_score_price: 1,
     };
-    transfer::public_transfer(global, tx_context::sender(ctx));
+    debug::print(&global.id);
+    transfer::share_object(global);
+    debug::print(&b"Pictor Network initialized successfully.".to_ascii_string());
+    
 }
 
 public fun new_operator(_: &AdminCap, operator: address, ctx: &mut TxContext) {
@@ -77,18 +82,17 @@ public fun new_operator(_: &AdminCap, operator: address, ctx: &mut TxContext) {
     transfer::transfer(operator_cap, operator);
 }
 
-public fun register_user(users: &mut GlobalData, ctx: &mut TxContext) {
+public fun register_user(global: &mut GlobalData, ctx: &mut TxContext) {
     let sender = tx_context::sender(ctx);
 
-    assert!(!table::contains<address, UserInfo>(&users.users, sender), EUserRegistered);
+    assert!(!table::contains<address, UserInfo>(&global.users, sender), EUserRegistered);
 
     let user_info = UserInfo {
-        id: object::new(ctx),
         balance: 0,
         credit: 0,
     };
 
-    table::add(&mut users.users, sender, user_info);
+    table::add(&mut global.users, sender, user_info);
 }
 
 public fun register_worker(
@@ -200,4 +204,31 @@ public fun add_credit(_: &OperatorCap, global: &mut GlobalData, user: address, a
     assert!(table::contains<address, UserInfo>(&global.users, user), EUserNotRegistered);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, user);
     user_info.credit = user_info.credit + amount;
+}
+
+#[test_only]
+public fun test_init(ctx: &mut TxContext) {
+    init(ctx);
+}
+
+#[test]
+fun test_pictor_network() {
+    let admin = @0xAD;
+    let mut ts = test_scenario::begin(admin);
+    {
+        init(ts.ctx());
+        ts.next_tx(admin);
+        test_utils::print(b"init");
+        assert!(test_scenario::has_most_recent_shared<GlobalData>());
+        // let shared_config = test_scenario::take_shared<GlobalData>(&scenario);
+        // test_scenario::return_shared<GlobalData>(shared_config);
+    };
+    
+    
+    // let shared = test_scenario::most_recent_id_shared<GlobalData>();
+    // shared_config.register_user(test_scenario::ctx(&mut scenario));
+
+    
+
+    ts.end();
 }

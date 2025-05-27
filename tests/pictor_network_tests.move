@@ -1,18 +1,26 @@
-/*
 #[test_only]
 module pictor_network::pictor_network_tests;
-// uncomment this line to import the module
-// use pictor_network::pictor_network;
 
-const ENotImplemented: u64 = 0;
+use pictor_network::pictor_network::{Self, GlobalData};
+use sui::test_scenario::{Self, ctx};
+use sui::test_utils;
 
-#[test]
-fun test_pictor_network() {
-    // pass
-}
+// #[test]
+// fun test_pictor_network() {
+//     let admin = @0xAD;
+//     let mut scenario = test_scenario::begin(admin);
+//     {
+//         pictor_network::test_init(ctx(&mut scenario));
+//         test_utils::print(b"init");
+//         let shared_config = test_scenario::take_shared<GlobalData>(&scenario);
+//         test_scenario::return_shared<GlobalData>(shared_config);
+//     };
+    
+    
+//     // let shared = test_scenario::most_recent_id_shared<GlobalData>();
+//     // shared_config.register_user(test_scenario::ctx(&mut scenario));
 
-#[test, expected_failure(abort_code = ::pictor_network::pictor_network_tests::ENotImplemented)]
-fun test_pictor_network_fail() {
-    abort ENotImplemented
-}
-*/
+    
+
+//     scenario.end();
+// }
