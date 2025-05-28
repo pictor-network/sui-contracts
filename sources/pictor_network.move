@@ -1,9 +1,8 @@
+#[allow(unused_use)]
 module pictor_network::pictor_network;
 
-use sui::table::{Self, Table};
 use std::debug;
-use sui::test_scenario::{Self, ctx};
-use sui::test_utils;
+use sui::table::{Self, Table};
 
 const EUserRegistered: u64 = 0;
 const EUserNotRegistered: u64 = 1;
@@ -69,10 +68,7 @@ fun init(ctx: &mut TxContext) {
         jobs: table::new<vector<u8>, Job>(ctx),
         power_score_price: 1,
     };
-    debug::print(&global.id);
     transfer::share_object(global);
-    debug::print(&b"Pictor Network initialized successfully.".to_ascii_string());
-    
 }
 
 public fun new_operator(_: &AdminCap, operator: address, ctx: &mut TxContext) {
@@ -85,26 +81,23 @@ public fun new_operator(_: &AdminCap, operator: address, ctx: &mut TxContext) {
 public fun register_user(global: &mut GlobalData, ctx: &mut TxContext) {
     let sender = tx_context::sender(ctx);
 
-    assert!(!table::contains<address, UserInfo>(&global.users, sender), EUserRegistered);
-
-    let user_info = UserInfo {
-        balance: 0,
-        credit: 0,
-    };
-
-    table::add(&mut global.users, sender, user_info);
+    register_user_internal(global, sender);
 }
 
-public fun register_worker(
+public fun op_register_user(_: &OperatorCap, global: &mut GlobalData, user: address) {
+    assert!(!table::contains<address, UserInfo>(&global.users, user), EUserRegistered);
+
+    register_user_internal(global, user);
+}
+
+public fun op_register_worker(
     _: &OperatorCap,
     global: &mut GlobalData,
     worker_owner: address,
     worker_id: vector<u8>,
-    ctx: &mut TxContext,
+    _ctx: &mut TxContext,
 ) {
-    let sender = tx_context::sender(ctx);
-
-    assert!(table::contains<address, UserInfo>(&global.users, sender), EUserNotRegistered);
+    assert!(table::contains<address, UserInfo>(&global.users, worker_owner), EUserNotRegistered);
 
     assert!(!table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerRegistered);
 
@@ -117,7 +110,7 @@ public fun register_worker(
     table::add(&mut global.workers, worker_id, worker);
 }
 
-public fun add_job(
+public fun op_create_job(
     _: &OperatorCap,
     global: &mut GlobalData,
     job_owner: address,
@@ -137,7 +130,7 @@ public fun add_job(
     table::add(&mut global.jobs, job_id, job);
 }
 
-public fun add_task(
+public fun op_add_task(
     _: &OperatorCap,
     global: &mut GlobalData,
     job_id: vector<u8>,
@@ -145,6 +138,7 @@ public fun add_task(
     worker_id: vector<u8>,
     power_score: u64,
     duration: u64,
+    _ctx: &mut TxContext,
 ) {
     assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
     assert!(table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerNotRegistered);
@@ -181,7 +175,7 @@ public fun add_task(
     job.payment = job.payment + payment;
 }
 
-public fun complete_job(_: &OperatorCap, global: &mut GlobalData, job_id: vector<u8>) {
+public fun op_complete_job(_: &OperatorCap, global: &mut GlobalData, job_id: vector<u8>) {
     let job = table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id);
     assert!(job.is_completed == false, EJobCompleted);
     job.is_completed = true;
@@ -200,35 +194,42 @@ public fun complete_job(_: &OperatorCap, global: &mut GlobalData, job_id: vector
     };
 }
 
-public fun add_credit(_: &OperatorCap, global: &mut GlobalData, user: address, amount: u64) {
+public fun op_credit_user(
+    _: &OperatorCap,
+    global: &mut GlobalData,
+    user: address,
+    amount: u64,
+    _ctx: &mut TxContext,
+) {
     assert!(table::contains<address, UserInfo>(&global.users, user), EUserNotRegistered);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, user);
     user_info.credit = user_info.credit + amount;
 }
 
+public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
+    assert!(table::contains<address, UserInfo>(&global.users, user), EUserNotRegistered);
+    let user_info = table::borrow<address, UserInfo>(&global.users, user);
+    (user_info.balance, user_info.credit)
+}
+
+public fun get_job_info(global: &GlobalData, job_id: vector<u8>): (address, u64, u64, bool) {
+    assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
+    let job = table::borrow<vector<u8>, Job>(&global.jobs, job_id);
+    (job.owner, vector::length<Task>(&job.tasks), job.payment, job.is_completed)
+}
+
+fun register_user_internal(global: &mut GlobalData, user: address) {
+    assert!(!table::contains<address, UserInfo>(&global.users, user), EUserRegistered);
+
+    let user_info = UserInfo {
+        balance: 0,
+        credit: 0,
+    };
+
+    table::add(&mut global.users, user, user_info);
+}
+
 #[test_only]
 public fun test_init(ctx: &mut TxContext) {
     init(ctx);
-}
-
-#[test]
-fun test_pictor_network() {
-    let admin = @0xAD;
-    let mut ts = test_scenario::begin(admin);
-    {
-        init(ts.ctx());
-        ts.next_tx(admin);
-        test_utils::print(b"init");
-        assert!(test_scenario::has_most_recent_shared<GlobalData>());
-        // let shared_config = test_scenario::take_shared<GlobalData>(&scenario);
-        // test_scenario::return_shared<GlobalData>(shared_config);
-    };
-    
-    
-    // let shared = test_scenario::most_recent_id_shared<GlobalData>();
-    // shared_config.register_user(test_scenario::ctx(&mut scenario));
-
-    
-
-    ts.end();
 }
