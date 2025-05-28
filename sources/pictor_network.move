@@ -4,6 +4,9 @@ module pictor_network::pictor_network;
 use std::debug;
 use sui::table::{Self, Table};
 
+const DENOMINATOR: u64 = 10000;
+const WORKER_EARNING_PERCENTAGE: u64 = 80;
+
 const EUserRegistered: u64 = 0;
 const EUserNotRegistered: u64 = 1;
 const EWorkerRegistered: u64 = 2;
@@ -175,7 +178,7 @@ public fun op_add_task(
     job.payment = job.payment + payment;
 }
 
-public fun op_complete_job(_: &OperatorCap, global: &mut GlobalData, job_id: vector<u8>) {
+public fun op_complete_job(_: &OperatorCap, global: &mut GlobalData, job_id: vector<u8>, _ctx: &mut TxContext) {
     let job = table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id);
     assert!(job.is_completed == false, EJobCompleted);
     job.is_completed = true;
@@ -190,7 +193,7 @@ public fun op_complete_job(_: &OperatorCap, global: &mut GlobalData, job_id: vec
 
         // Add payment to worker's owner
         let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, worker.owner);
-        user_info.balance = user_info.balance + payment;
+        user_info.balance = user_info.balance + calculate_payment_for_worker(payment);
     };
 }
 
@@ -216,6 +219,14 @@ public fun get_job_info(global: &GlobalData, job_id: vector<u8>): (address, u64,
     assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
     let job = table::borrow<vector<u8>, Job>(&global.jobs, job_id);
     (job.owner, vector::length<Task>(&job.tasks), job.payment, job.is_completed)
+}
+
+public fun get_power_score_price(global: &GlobalData): u64 {
+    global.power_score_price
+}
+
+public fun calculate_payment_for_worker(payment: u64): u64 {
+    payment * WORKER_EARNING_PERCENTAGE / DENOMINATOR
 }
 
 fun register_user_internal(global: &mut GlobalData, user: address) {

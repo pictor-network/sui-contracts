@@ -10,6 +10,10 @@ use sui::balance;
 use sui::test_scenario::{Self, ctx, Scenario};
 use sui::test_utils;
 
+const USER_CREDIT: u64 = 10000000;
+const WORKER_POWER: u64 = 100;
+const WORKER_DURATION: u64 = 1000;
+
 #[test]
 fun test_pictor_network() {
     let admin = @0xAD;
@@ -21,7 +25,7 @@ fun test_pictor_network() {
     test_init(&mut ts, admin);
     add_operator(&mut ts, admin, operator);
     register_user(&mut ts, user);
-    credit_user(&mut ts, operator, user, 10000000);
+    credit_user(&mut ts, operator, user, USER_CREDIT);
 
     // Register worker owner
     register_user(&mut ts, worker_owner);
@@ -34,6 +38,29 @@ fun test_pictor_network() {
 
     // operator should add task
     add_task(&mut ts, operator, b"job1", 1, b"worker1");
+
+    complete_job(&mut ts, operator, b"job1");
+
+    ts.next_tx(admin);
+    let global = test_scenario::take_shared<GlobalData>(&ts);
+    let power_score_price = pictor_network::get_power_score_price(&global);
+    let (_, user_credit) = pictor_network::get_user_info(
+        &global,
+        user,
+    );
+
+    let payment = WORKER_POWER * WORKER_DURATION * power_score_price;
+
+    assert!(user_credit == USER_CREDIT - payment);
+    
+    let (worker_balance, _) = pictor_network::get_user_info(
+        &global,
+        worker_owner,
+    );
+
+    assert!(worker_balance == pictor_network::calculate_payment_for_worker(payment));
+
+    test_scenario::return_shared<GlobalData>(global);
 
     ts.end();
 }
@@ -141,10 +168,22 @@ fun add_task(
         job_id,
         task_id,
         worker_id,
-        100,
-        1000,
+        WORKER_POWER,
+        WORKER_DURATION,
         ts.ctx(),
     );
+    test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_to_sender<OperatorCap>(ts, operator_cap);
+}
+
+fun complete_job(ts: &mut Scenario, operator: address, job_id: vector<u8>) {
+    test_utils::print(b"operator should complete job");
+    ts.next_tx(operator);
+    let mut global = test_scenario::take_shared<GlobalData>(ts);
+    let operator_cap = test_scenario::take_from_sender<OperatorCap>(ts);
+    pictor_network::op_complete_job(&operator_cap, &mut global, job_id, ts.ctx());
+    let (_, _, _, is_completed) = pictor_network::get_job_info(&global, job_id);
+    assert!(is_completed);
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_to_sender<OperatorCap>(ts, operator_cap);
 }
