@@ -3,6 +3,10 @@ module pictor_network::pictor_network;
 
 use std::debug;
 use sui::table::{Self, Table};
+use sui::coin::{Self, Coin};
+ use sui::balance::{Self, Balance};
+use pictor_network::pictor_coin::{Self, PICTOR_COIN};
+
 
 const DENOMINATOR: u64 = 10000;
 const WORKER_EARNING_PERCENTAGE: u64 = 80;
@@ -55,6 +59,7 @@ public struct GlobalData has key, store {
     workers: Table<vector<u8>, Worker>,
     jobs: Table<vector<u8>, Job>,
     power_score_price: u64,
+    vault: Balance<PICTOR_COIN>,
 }
 
 fun init(ctx: &mut TxContext) {
@@ -64,12 +69,21 @@ fun init(ctx: &mut TxContext) {
         },
         tx_context::sender(ctx),
     );
+
+    transfer::transfer(
+        OperatorCap {
+            id: object::new(ctx),
+        },
+        tx_context::sender(ctx),
+    );
+
     let global = GlobalData {
         id: object::new(ctx),
         users: table::new<address, UserInfo>(ctx),
         workers: table::new<vector<u8>, Worker>(ctx),
         jobs: table::new<vector<u8>, Job>(ctx),
         power_score_price: 1,
+        vault: balance::zero<PICTOR_COIN>(),
     };
     transfer::share_object(global);
 }
@@ -79,6 +93,40 @@ public fun new_operator(_: &AdminCap, operator: address, ctx: &mut TxContext) {
         id: object::new(ctx),
     };
     transfer::transfer(operator_cap, operator);
+}
+
+public fun deposit_pictor_coin(
+    global: &mut GlobalData,
+    coin: Coin<PICTOR_COIN>,
+    ctx: &mut TxContext,
+) {
+    let sender = tx_context::sender(ctx);
+    if (!table::contains<address, UserInfo>(&global.users, sender)) {
+        register_user_internal(global, sender);
+    };
+    let amount = coin::value<PICTOR_COIN>(&coin);
+    assert!(amount > 0, EInsufficentBalance);
+    let deposited_balance = coin::into_balance<PICTOR_COIN>(coin);
+    balance::join(&mut global.vault, deposited_balance);
+    let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, sender);
+    user_info.balance = user_info.balance + amount;
+}
+
+#[lint_allow(self_transfer)]
+public fun withdraw_pictor_coin(
+    global: &mut GlobalData,
+    amount: u64,
+    ctx: &mut TxContext,
+) {
+    let sender = tx_context::sender(ctx);
+    assert!(table::contains<address, UserInfo>(&global.users, sender), EUserNotRegistered);
+    let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, sender);
+    assert!(user_info.balance >= amount, EInsufficentBalance);
+
+    user_info.balance = user_info.balance - amount;
+    let withdrawn_balance = balance::split(&mut global.vault, amount);
+    let coin = coin::from_balance<PICTOR_COIN>(withdrawn_balance, ctx);
+    transfer::public_transfer(coin, sender);
 }
 
 public fun register_user(global: &mut GlobalData, ctx: &mut TxContext) {

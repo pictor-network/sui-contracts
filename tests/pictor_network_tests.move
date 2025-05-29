@@ -3,14 +3,17 @@
 module pictor_network::pictor_network_tests;
 
 use pictor_network::pictor_network::{Self, GlobalData, AdminCap, OperatorCap};
+use pictor_network::pictor_coin::{Self, PICTOR_COIN};
 use std::debug;
 use std::unit_test::assert_eq;
 use sui::address::{Self, to_string};
 use sui::balance;
 use sui::test_scenario::{Self, ctx, Scenario};
 use sui::test_utils;
+use sui::coin::{Self, Coin, TreasuryCap};
 
 const USER_CREDIT: u64 = 10000000;
+const USER_MINT_AMOUNT: u64 = 1_000_000_000;
 const WORKER_POWER: u64 = 100;
 const WORKER_DURATION: u64 = 1000;
 
@@ -23,8 +26,9 @@ fun test_pictor_network() {
     let mut ts = test_scenario::begin(admin);
 
     test_init(&mut ts, admin);
+    mint_coin(&mut ts, admin, user, USER_MINT_AMOUNT);
     add_operator(&mut ts, admin, operator);
-    register_user(&mut ts, user);
+    deposit_pictor_coin(&mut ts, user, USER_MINT_AMOUNT);
     credit_user(&mut ts, operator, user, USER_CREDIT);
 
     // Register worker owner
@@ -62,14 +66,43 @@ fun test_pictor_network() {
 
     test_scenario::return_shared<GlobalData>(global);
 
+    withdraw_pictor_coin(&mut ts, worker_owner, worker_balance);
+
     ts.end();
 }
 
 fun test_init(ts: &mut Scenario, admin: address) {
     test_utils::print(b"init");
     pictor_network::test_init(ts.ctx());
+    pictor_coin::test_init(ts.ctx());
     ts.next_tx(admin);
     assert!(test_scenario::has_most_recent_shared<GlobalData>());
+}
+
+fun mint_coin(ts: &mut Scenario, admin: address, recipient: address, amount: u64) {
+    test_utils::print(concat(b"mint coin to: ", recipient));
+    ts.next_tx(admin);
+    let mut treasury_cap = test_scenario::take_from_sender<TreasuryCap<PICTOR_COIN>>(ts);
+    pictor_coin::mint(&mut treasury_cap, amount, recipient, ts.ctx());
+    test_scenario::return_to_sender<TreasuryCap<PICTOR_COIN>>(ts, treasury_cap);
+}
+
+fun deposit_pictor_coin(ts: &mut Scenario, user: address, amount: u64) {
+    test_utils::print(concat(b"deposit coin from: ", user));
+    ts.next_tx(user);
+    let mut global = test_scenario::take_shared<GlobalData>(ts);
+    let coin = test_scenario::take_from_sender<Coin<PICTOR_COIN>>(ts);
+
+    pictor_network::deposit_pictor_coin(&mut global, coin, ts.ctx());
+    test_scenario::return_shared<GlobalData>(global);
+}
+
+fun withdraw_pictor_coin(ts: &mut Scenario, user: address, amount: u64) {
+    test_utils::print(concat(b"withdraw coin from: ", user));
+    ts.next_tx(user);
+    let mut global = test_scenario::take_shared<GlobalData>(ts);
+     pictor_network::withdraw_pictor_coin(&mut global, amount, ts.ctx());
+    test_scenario::return_shared<GlobalData>(global);
 }
 
 fun add_operator(ts: &mut Scenario, admin: address, operator: address) {
@@ -105,7 +138,7 @@ fun credit_user(ts: &mut Scenario, operator: address, user: address, amount: u64
         ts.ctx(),
     );
     let (balance, credit) = pictor_network::get_user_info(&global, user);
-    assert!(balance == 0 && credit == amount);
+    assert!(balance == USER_MINT_AMOUNT && credit == amount);
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_to_sender<OperatorCap>(ts, operator_cap);
 }
