@@ -1,7 +1,7 @@
 #[allow(unused_use)]
 module pictor_network::pictor_network;
 
-use pictor_network::access_control::{Self, Auth, is_operator};
+use pictor_network::pictor_manage::{Self, Auth, is_operator};
 use pictor_network::pictor_coin::{Self, PICTOR_COIN};
 use std::debug;
 use sui::balance::{Self, Balance};
@@ -77,7 +77,7 @@ public fun deposit_pictor_coin(
     };
     let amount = coin::value<PICTOR_COIN>(&coin);
     assert!(amount > 0, EInsufficentBalance);
-    let deposited_balance = coin::into_balance<PICTOR_COIN>(coin);
+    let deposited_balance = coin::into_balance(coin);
     balance::join(&mut global.vault, deposited_balance);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, sender);
     user_info.balance = user_info.balance + amount;
@@ -108,7 +108,7 @@ public fun op_register_user(
     user: address,
     ctx: &mut TxContext,
 ) {
-    access_control::is_operator(auth, tx_context::sender(ctx));
+    pictor_manage::is_operator(auth, tx_context::sender(ctx));
     assert!(!table::contains<address, UserInfo>(&global.users, user), EUserRegistered);
 
     register_user_internal(global, user);
@@ -121,7 +121,7 @@ public fun op_register_worker(
     worker_id: vector<u8>,
     ctx: &mut TxContext,
 ) {
-    access_control::is_operator(auth, tx_context::sender(ctx));
+    pictor_manage::is_operator(auth, tx_context::sender(ctx));
     assert!(table::contains<address, UserInfo>(&global.users, worker_owner), EUserNotRegistered);
 
     assert!(!table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerRegistered);
@@ -142,7 +142,7 @@ public fun op_create_job(
     job_id: vector<u8>,
     ctx: &mut TxContext,
 ) {
-    access_control::is_operator(auth, tx_context::sender(ctx));
+    pictor_manage::is_operator(auth, tx_context::sender(ctx));
     assert!(table::contains<address, UserInfo>(&global.users, job_owner), EUserNotRegistered);
 
     assert!(!table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobRegistered);
@@ -166,7 +166,7 @@ public fun op_add_task(
     duration: u64,
     ctx: &mut TxContext,
 ) {
-    access_control::is_operator(auth, tx_context::sender(ctx));
+    pictor_manage::is_operator(auth, tx_context::sender(ctx));
     assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
     assert!(table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerNotRegistered);
 
@@ -208,7 +208,7 @@ public fun op_complete_job(
     job_id: vector<u8>,
     ctx: &mut TxContext,
 ) {
-    access_control::is_operator(auth, tx_context::sender(ctx));
+    pictor_manage::is_operator(auth, tx_context::sender(ctx));
     let job = table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id);
     assert!(job.is_completed == false, EJobCompleted);
     job.is_completed = true;
@@ -234,16 +234,19 @@ public fun op_credit_user(
     amount: u64,
     ctx: &mut TxContext,
 ) {
-    access_control::is_operator(auth, tx_context::sender(ctx));
+    pictor_manage::is_operator(auth, tx_context::sender(ctx));
     assert!(table::contains<address, UserInfo>(&global.users, user), EUserNotRegistered);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, user);
     user_info.credit = user_info.credit + amount;
 }
 
 public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
-    assert!(table::contains<address, UserInfo>(&global.users, user), EUserNotRegistered);
-    let user_info = table::borrow<address, UserInfo>(&global.users, user);
+    if (table::contains<address, UserInfo>(&global.users, user)) {
+        let user_info = table::borrow<address, UserInfo>(&global.users, user);
     (user_info.balance, user_info.credit)
+    } else {
+        (0, 0)
+    }
 }
 
 public fun get_job_info(global: &GlobalData, job_id: vector<u8>): (address, u64, u64, bool) {

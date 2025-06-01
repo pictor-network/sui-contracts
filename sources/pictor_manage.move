@@ -1,4 +1,4 @@
-module pictor_network::access_control;
+module pictor_network::pictor_manage;
 
 use sui::bag::{Self, Bag};
 
@@ -47,14 +47,14 @@ fun init(ctx: &mut TxContext) {
     transfer::share_object(auth);
 }
 
-public fun add_capability<C: store + drop>(auth: &mut Auth, owner: address, cap: C) {
-    assert!(auth.has_cap<AdminCap>(owner), EUnAuthorized);
+public fun add_capability<C: store + drop>(auth: &mut Auth, owner: address, cap: C, ctx: &mut TxContext) {
+    assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
     assert!(!auth.has_cap<C>(owner), ERecordExists);
     auth.add_cap(owner, cap);
 }
 
-public fun remove_capability<C: store + drop>(auth: &mut Auth, owner: address) {
-    assert!(auth.has_cap<AdminCap>(owner), EUnAuthorized);
+public fun remove_capability<C: store + drop>(auth: &mut Auth, owner: address, ctx: &mut TxContext) {
+    assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
     assert!(auth.has_cap<C>(owner), ENoAuthRecord);
     let _: C = auth.remove_cap(owner);
 }
@@ -64,16 +64,17 @@ public fun has_cap<Cap: store>(auth: &Auth, owner: address): bool {
     auth.roles.contains(RoleKey<Cap> { owner })
 }
 
-public fun add_operator(auth: &mut Auth, owner: address) {
+public fun add_operator(auth: &mut Auth, owner: address, ctx: &mut TxContext) {
     add_capability<OperatorCap>(
         auth,
         owner,
         OperatorCap {},
+        ctx
     );
 }
 
-public fun remove_operator(auth: &mut Auth, operator: address) {
-    remove_capability<OperatorCap>(auth, operator);
+public fun remove_operator(auth: &mut Auth, operator: address, ctx: &mut TxContext) {
+    remove_capability<OperatorCap>(auth, operator, ctx);
 }
 
 public fun is_admin(auth: &Auth, owner: address): bool {
@@ -95,3 +96,9 @@ fun add_cap<Cap: store + drop>(auth: &mut Auth, owner: address, cap: Cap) {
 fun remove_cap<Cap: store + drop>(auth: &mut Auth, owner: address): Cap {
     auth.roles.remove(RoleKey<Cap> { owner })
 }
+
+#[test_only]
+public fun test_init(ctx: &mut TxContext) {
+    init(ctx);
+}
+
