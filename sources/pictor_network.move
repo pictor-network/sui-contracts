@@ -2,7 +2,6 @@
 module pictor_network::pictor_network;
 
 use pictor_network::pictor_manage::{Self, Auth, is_operator};
-use pictor_network::pictor_coin::{Self, PICTOR_COIN};
 use std::debug;
 use sui::balance::{Self, Balance};
 use sui::coin::{Self, Coin};
@@ -45,13 +44,13 @@ public struct Job has store {
     is_completed: bool,
 }
 
-public struct GlobalData has key, store {
+public struct GlobalData<phantom C> has key, store {
     id: UID,
     users: Table<address, UserInfo>,
     workers: Table<vector<u8>, Worker>,
     jobs: Table<vector<u8>, Job>,
     power_score_price: u64,
-    vault: Balance<PICTOR_COIN>,
+    vault: Balance<C>,
 }
 
 fun init(ctx: &mut TxContext) {
@@ -64,6 +63,20 @@ fun init(ctx: &mut TxContext) {
         vault: balance::zero<PICTOR_COIN>(),
     };
     transfer::share_object(global);
+}
+
+public fun init_pictor_network<C>(auth: &Auth, ctx: &mut TxContext) {
+    pictor_manage::is_admin(auth, tx_context::sender(ctx));
+    let global = GlobalData<C> {
+        id: object::new(ctx),
+        users: table::new<address, UserInfo>(ctx),
+        workers: table::new<vector<u8>, Worker>(ctx),
+        jobs: table::new<vector<u8>, Job>(ctx),
+        power_score_price: 1,
+        vault: balance::zero<PICTOR_COIN>(),
+    };
+    transfer::share_object(global);
+
 }
 
 public fun deposit_pictor_coin(
