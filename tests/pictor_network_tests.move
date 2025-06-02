@@ -15,7 +15,7 @@ use sui::test_utils;
 
 const USER_CREDIT: u64 = 10000000;
 const USER_MINT_AMOUNT: u64 = 1_000_000_000;
-const WORKER_POWER: u64 = 100;
+const WORKER_COST: u64 = 100;
 const WORKER_DURATION: u64 = 1000;
 
 #[test]
@@ -32,9 +32,6 @@ fun test_pictor_network() {
     deposit_pictor_coin(&mut ts, user);
     credit_user(&mut ts, operator, user, USER_CREDIT);
 
-    // Register worker owner
-    register_user(&mut ts, worker_owner);
-
     // Register worker
     register_worker(&mut ts, operator, worker_owner, b"worker1");
 
@@ -48,22 +45,19 @@ fun test_pictor_network() {
 
     ts.next_tx(admin);
     let global = test_scenario::take_shared<GlobalData>(&ts);
-    let power_score_price = pictor_network::get_power_score_price(&global);
     let (_, user_credit) = pictor_network::get_user_info(
         &global,
         user,
     );
 
-    let payment = WORKER_POWER * WORKER_DURATION * power_score_price;
-
-    assert!(user_credit == USER_CREDIT - payment);
+    assert!(user_credit == USER_CREDIT - WORKER_COST);
 
     let (worker_balance, _) = pictor_network::get_user_info(
         &global,
         worker_owner,
     );
 
-    assert!(worker_balance == pictor_network::calculate_payment_for_worker(payment));
+    assert!(worker_balance == pictor_network::calculate_worker_payment(WORKER_COST));
 
     test_scenario::return_shared<GlobalData>(global);
 
@@ -113,16 +107,6 @@ fun add_operator(ts: &mut Scenario, admin: address, operator: address) {
     let mut auth = test_scenario::take_shared<Auth>(ts);
     pictor_manage::add_operator(&mut auth, operator, ts.ctx());
     test_scenario::return_shared<Auth>(auth);
-}
-
-fun register_user(ts: &mut Scenario, user: address) {
-    test_utils::print(concat(b"register user: ", user));
-    ts.next_tx(user);
-    let mut global = test_scenario::take_shared<GlobalData>(ts);
-    pictor_network::register_user(&mut global, ts.ctx());
-    let (balance, credit) = pictor_network::get_user_info(&global, user);
-    assert!(balance == 0 && credit == 0);
-    test_scenario::return_shared<GlobalData>(global);
 }
 
 fun credit_user(ts: &mut Scenario, operator: address, user: address, amount: u64) {
@@ -201,7 +185,7 @@ fun add_task(
         job_id,
         task_id,
         worker_id,
-        WORKER_POWER,
+        WORKER_COST,
         WORKER_DURATION,
         ts.ctx(),
     );

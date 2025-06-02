@@ -1,17 +1,17 @@
 #[allow(unused_use)]
 module pictor_network::pictor_network;
 
-use pictor_network::pictor_manage::{Self, Auth, is_operator};
 use pictor_network::pictor_coin::{Self, PICTOR_COIN};
+use pictor_network::pictor_manage::{Self, Auth, is_operator};
 use std::debug;
 use sui::balance::{Self, Balance};
 use sui::coin::{Self, Coin};
+use sui::pay;
 use sui::table::{Self, Table};
 
 const DENOMINATOR: u64 = 10000;
 const WORKER_EARNING_PERCENTAGE: u64 = 80;
 
-const EUserRegistered: u64 = 0;
 const EUserNotRegistered: u64 = 1;
 const EWorkerRegistered: u64 = 2;
 const EWorkerNotRegistered: u64 = 3;
@@ -34,7 +34,7 @@ public struct Worker has store {
 public struct Task has store {
     task_id: u64,
     worker_id: vector<u8>,
-    power_score: u64,
+    cost: u64,
     duration: u64,
 }
 
@@ -50,7 +50,6 @@ public struct GlobalData has key, store {
     users: Table<address, UserInfo>,
     workers: Table<vector<u8>, Worker>,
     jobs: Table<vector<u8>, Job>,
-    power_score_price: u64,
     vault: Balance<PICTOR_COIN>,
 }
 
@@ -60,21 +59,18 @@ fun init(ctx: &mut TxContext) {
         users: table::new<address, UserInfo>(ctx),
         workers: table::new<vector<u8>, Worker>(ctx),
         jobs: table::new<vector<u8>, Job>(ctx),
-        power_score_price: 1,
         vault: balance::zero<PICTOR_COIN>(),
     };
     transfer::share_object(global);
 }
 
-public fun deposit_pictor_coin(
+public entry fun deposit_pictor_coin(
     global: &mut GlobalData,
     coin: Coin<PICTOR_COIN>,
     ctx: &mut TxContext,
 ) {
     let sender = tx_context::sender(ctx);
-    if (!table::contains<address, UserInfo>(&global.users, sender)) {
-        register_user_internal(global, sender);
-    };
+    register_user_internal(global, sender);
     let amount = coin::value<PICTOR_COIN>(&coin);
     assert!(amount > 0, EInsufficentBalance);
     let deposited_balance = coin::into_balance(coin);
@@ -84,7 +80,7 @@ public fun deposit_pictor_coin(
 }
 
 #[lint_allow(self_transfer)]
-public fun withdraw_pictor_coin(global: &mut GlobalData, amount: u64, ctx: &mut TxContext) {
+public entry fun withdraw_pictor_coin(global: &mut GlobalData, amount: u64, ctx: &mut TxContext) {
     let sender = tx_context::sender(ctx);
     assert!(table::contains<address, UserInfo>(&global.users, sender), EUserNotRegistered);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, sender);
@@ -96,25 +92,23 @@ public fun withdraw_pictor_coin(global: &mut GlobalData, amount: u64, ctx: &mut 
     transfer::public_transfer(coin, sender);
 }
 
-public fun register_user(global: &mut GlobalData, ctx: &mut TxContext) {
+public entry fun register_user(global: &mut GlobalData, ctx: &mut TxContext) {
     let sender = tx_context::sender(ctx);
 
     register_user_internal(global, sender);
 }
 
-public fun op_register_user(
+public entry fun op_register_user(
     auth: &Auth,
     global: &mut GlobalData,
     user: address,
     ctx: &mut TxContext,
 ) {
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
-    assert!(!table::contains<address, UserInfo>(&global.users, user), EUserRegistered);
-
     register_user_internal(global, user);
 }
 
-public fun op_register_worker(
+public entry fun op_register_worker(
     auth: &Auth,
     global: &mut GlobalData,
     worker_owner: address,
@@ -122,7 +116,7 @@ public fun op_register_worker(
     ctx: &mut TxContext,
 ) {
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
-    assert!(table::contains<address, UserInfo>(&global.users, worker_owner), EUserNotRegistered);
+    register_user_internal(global, worker_owner);
 
     assert!(!table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerRegistered);
 
@@ -135,7 +129,7 @@ public fun op_register_worker(
     table::add(&mut global.workers, worker_id, worker);
 }
 
-public fun op_create_job(
+public entry fun op_create_job(
     auth: &Auth,
     global: &mut GlobalData,
     job_owner: address,
@@ -156,13 +150,13 @@ public fun op_create_job(
     table::add(&mut global.jobs, job_id, job);
 }
 
-public fun op_add_task(
+public entry fun op_add_task(
     auth: &Auth,
     global: &mut GlobalData,
     job_id: vector<u8>,
     task_id: u64,
     worker_id: vector<u8>,
-    power_score: u64,
+    cost: u64,
     duration: u64,
     ctx: &mut TxContext,
 ) {
@@ -171,10 +165,10 @@ public fun op_add_task(
     assert!(table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerNotRegistered);
 
     let task = Task {
-        task_id: task_id,
-        worker_id: worker_id,
-        power_score: power_score,
-        duration: duration,
+        task_id,
+        worker_id,
+        cost,
+        duration,
     };
     vector::push_back(
         &mut table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id).tasks,
@@ -182,27 +176,26 @@ public fun op_add_task(
     );
 
     //need to calculate balance of user & worker
-    let payment = power_score * global.power_score_price * duration;
     let user_info = table::borrow_mut<address, UserInfo>(
         &mut global.users,
         global.jobs[job_id].owner,
     );
-    assert!(user_info.credit + user_info.balance >= payment, EInsufficentBalance);
+    assert!(user_info.credit + user_info.balance >= cost, EInsufficentBalance);
 
     // Deduct payment from user, credit first, then balance
-    if (user_info.credit >= payment) {
-        user_info.credit = user_info.credit - payment;
+    if (user_info.credit >= cost) {
+        user_info.credit = user_info.credit - cost;
     } else {
-        let remaining_payment = payment - user_info.credit;
+        let remaining_payment = cost - user_info.credit;
         user_info.credit = 0;
         user_info.balance = user_info.balance - remaining_payment;
     };
 
     let job = table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id);
-    job.payment = job.payment + payment;
+    job.payment = job.payment + cost;
 }
 
-public fun op_complete_job(
+public entry fun op_complete_job(
     auth: &Auth,
     global: &mut GlobalData,
     job_id: vector<u8>,
@@ -219,15 +212,14 @@ public fun op_complete_job(
         i = i - 1;
         let task = &global.jobs[job_id].tasks[i];
         let worker = table::borrow_mut<vector<u8>, Worker>(&mut global.workers, task.worker_id);
-        let payment = task.power_score * global.power_score_price * task.duration;
 
         // Add payment to worker's owner
         let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, worker.owner);
-        user_info.balance = user_info.balance + calculate_payment_for_worker(payment);
+        user_info.balance = user_info.balance + calculate_worker_payment(task.cost );
     };
 }
 
-public fun op_credit_user(
+public entry fun op_credit_user(
     auth: &Auth,
     global: &mut GlobalData,
     user: address,
@@ -235,7 +227,7 @@ public fun op_credit_user(
     ctx: &mut TxContext,
 ) {
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
-    assert!(table::contains<address, UserInfo>(&global.users, user), EUserNotRegistered);
+    register_user_internal(global, user);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, user);
     user_info.credit = user_info.credit + amount;
 }
@@ -243,7 +235,7 @@ public fun op_credit_user(
 public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
     if (table::contains<address, UserInfo>(&global.users, user)) {
         let user_info = table::borrow<address, UserInfo>(&global.users, user);
-    (user_info.balance, user_info.credit)
+        (user_info.balance, user_info.credit)
     } else {
         (0, 0)
     }
@@ -255,23 +247,18 @@ public fun get_job_info(global: &GlobalData, job_id: vector<u8>): (address, u64,
     (job.owner, vector::length<Task>(&job.tasks), job.payment, job.is_completed)
 }
 
-public fun get_power_score_price(global: &GlobalData): u64 {
-    global.power_score_price
-}
-
-public fun calculate_payment_for_worker(payment: u64): u64 {
+public fun calculate_worker_payment(payment: u64): u64 {
     payment * WORKER_EARNING_PERCENTAGE / DENOMINATOR
 }
 
 fun register_user_internal(global: &mut GlobalData, user: address) {
-    assert!(!table::contains<address, UserInfo>(&global.users, user), EUserRegistered);
-
-    let user_info = UserInfo {
-        balance: 0,
-        credit: 0,
-    };
-
-    table::add(&mut global.users, user, user_info);
+    if (!table::contains<address, UserInfo>(&global.users, user)) {
+        let user_info = UserInfo {
+            balance: 0,
+            credit: 0,
+        };
+        table::add(&mut global.users, user, user_info);
+    }
 }
 
 #[test_only]
