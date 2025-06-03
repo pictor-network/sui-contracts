@@ -8,7 +8,6 @@ const EUnAuthorized: u64 = 0x3;
 
 public struct Auth has key {
     id: UID,
-    is_paused: bool,
     roles: Bag, // Dynamic storage for role assignments.
 }
 
@@ -26,7 +25,6 @@ public struct RoleKey<phantom C> has copy, drop, store { owner: address }
 fun init(ctx: &mut TxContext) {
     let mut auth = Auth {
         id: object::new(ctx),
-        is_paused: false,
         roles: bag::new(ctx),
     };
 

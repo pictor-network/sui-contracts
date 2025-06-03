@@ -2,9 +2,9 @@
 #[allow(unused_use)]
 module pictor_network::pictor_network_tests;
 
-use pictor_network::pictor_manage::{Self, Auth, is_operator};
 use pictor_network::pictor_coin::{Self, PICTOR_COIN};
-use pictor_network::pictor_network::{Self, GlobalData};
+use pictor_network::pictor_manage::{Self, Auth, is_operator};
+use pictor_network::pictor_network::{Self, GlobalData, ESystemPaused};
 use std::debug;
 use std::unit_test::assert_eq;
 use sui::address::{Self, to_string};
@@ -21,8 +21,8 @@ const WORKER_DURATION: u64 = 1000;
 #[test]
 fun test_pictor_network() {
     let admin = @0xAD;
-    let user = @0xC0FFEE;
     let operator = @0xBEEF;
+    let user = @0xC0FFEE;
     let worker_owner = @0xDEADBEEF;
     let mut ts = test_scenario::begin(admin);
 
@@ -66,6 +66,22 @@ fun test_pictor_network() {
     ts.end();
 }
 
+#[test]
+#[expected_failure(abort_code = pictor_network::ESystemPaused)]
+fun test_paused() {
+    let admin = @0xAD;
+    let operator = @0xBEEF;
+    let user = @0xC0FFEE;
+    let mut ts = test_scenario::begin(admin);
+
+    test_init(&mut ts, admin);
+    pause_system(&mut ts, admin);
+    add_operator(&mut ts, admin, operator);
+    credit_user(&mut ts, operator, user, USER_CREDIT);
+
+    ts.end();
+}
+
 fun test_init(ts: &mut Scenario, admin: address) {
     test_utils::print(b"init");
     pictor_manage::test_init(ts.ctx());
@@ -73,6 +89,15 @@ fun test_init(ts: &mut Scenario, admin: address) {
     pictor_coin::test_init(ts.ctx());
     ts.next_tx(admin);
     assert!(test_scenario::has_most_recent_shared<GlobalData>());
+}
+
+fun pause_system(ts: &mut Scenario, admin: address) {
+    ts.next_tx(admin);
+    let mut global = test_scenario::take_shared<GlobalData>(ts);
+    let auth = test_scenario::take_shared<Auth>(ts);
+    pictor_network::admin_set_pause_status(&auth, &mut global, true, ts.ctx());
+    test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_shared<Auth>(auth);
 }
 
 fun mint_coin(ts: &mut Scenario, admin: address, recipient: address, amount: u64) {

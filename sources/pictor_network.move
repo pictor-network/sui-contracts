@@ -12,6 +12,7 @@ use sui::table::{Self, Table};
 const DENOMINATOR: u64 = 10000;
 const WORKER_EARNING_PERCENTAGE: u64 = 80;
 
+const ESystemPaused: u64 = 0;
 const EUserNotRegistered: u64 = 1;
 const EWorkerRegistered: u64 = 2;
 const EWorkerNotRegistered: u64 = 3;
@@ -51,6 +52,7 @@ public struct GlobalData has key, store {
     workers: Table<vector<u8>, Worker>,
     jobs: Table<vector<u8>, Job>,
     vault: Balance<PICTOR_COIN>,
+    is_paused: bool,
 }
 
 fun init(ctx: &mut TxContext) {
@@ -60,6 +62,7 @@ fun init(ctx: &mut TxContext) {
         workers: table::new<vector<u8>, Worker>(ctx),
         jobs: table::new<vector<u8>, Job>(ctx),
         vault: balance::zero<PICTOR_COIN>(),
+        is_paused: false,
     };
     transfer::share_object(global);
 }
@@ -69,6 +72,7 @@ public entry fun deposit_pictor_coin(
     coin: Coin<PICTOR_COIN>,
     ctx: &mut TxContext,
 ) {
+    check_not_paused(global);
     let sender = tx_context::sender(ctx);
     register_user_internal(global, sender);
     let amount = coin::value<PICTOR_COIN>(&coin);
@@ -81,6 +85,7 @@ public entry fun deposit_pictor_coin(
 
 #[lint_allow(self_transfer)]
 public entry fun withdraw_pictor_coin(global: &mut GlobalData, amount: u64, ctx: &mut TxContext) {
+    check_not_paused(global);
     let sender = tx_context::sender(ctx);
     assert!(table::contains<address, UserInfo>(&global.users, sender), EUserNotRegistered);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, sender);
@@ -94,7 +99,6 @@ public entry fun withdraw_pictor_coin(global: &mut GlobalData, amount: u64, ctx:
 
 public entry fun register_user(global: &mut GlobalData, ctx: &mut TxContext) {
     let sender = tx_context::sender(ctx);
-
     register_user_internal(global, sender);
 }
 
@@ -136,8 +140,9 @@ public entry fun op_create_job(
     job_id: vector<u8>,
     ctx: &mut TxContext,
 ) {
+    check_not_paused(global);
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
-    assert!(table::contains<address, UserInfo>(&global.users, job_owner), EUserNotRegistered);
+    register_user_internal(global, job_owner);
 
     assert!(!table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobRegistered);
 
@@ -160,6 +165,7 @@ public entry fun op_add_task(
     duration: u64,
     ctx: &mut TxContext,
 ) {
+    check_not_paused(global);
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
     assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
     assert!(table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerNotRegistered);
@@ -201,6 +207,7 @@ public entry fun op_complete_job(
     job_id: vector<u8>,
     ctx: &mut TxContext,
 ) {
+    check_not_paused(global);
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
     let job = table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id);
     assert!(job.is_completed == false, EJobCompleted);
@@ -226,10 +233,21 @@ public entry fun op_credit_user(
     amount: u64,
     ctx: &mut TxContext,
 ) {
+    check_not_paused(global);
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
     register_user_internal(global, user);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, user);
     user_info.credit = user_info.credit + amount;
+}
+
+public entry fun admin_set_pause_status(
+    auth: &Auth,
+    global: &mut GlobalData,
+    is_paused: bool,
+    ctx: &mut TxContext,
+) {
+    pictor_manage::is_admin(auth, tx_context::sender(ctx));
+    global.is_paused = is_paused;
 }
 
 public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
@@ -249,6 +267,10 @@ public fun get_job_info(global: &GlobalData, job_id: vector<u8>): (address, u64,
 
 public fun calculate_worker_payment(payment: u64): u64 {
     payment * WORKER_EARNING_PERCENTAGE / DENOMINATOR
+}
+
+fun check_not_paused(global: &GlobalData) {
+    assert!(!global.is_paused, ESystemPaused);
 }
 
 fun register_user_internal(global: &mut GlobalData, user: address) {
