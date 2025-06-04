@@ -2,13 +2,15 @@ module pictor_network::pictor_manage;
 
 use sui::bag::{Self, Bag};
 
-const ERecordExists: u64 = 0x1;
-const ENoAuthRecord: u64 = 0x2;
-const EUnAuthorized: u64 = 0x3;
+const EUnAuthorized: u64 = 0;
+const ERecordExists: u64 = 1;
+const ENoAuthRecord: u64 = 2;
+
 
 public struct Auth has key {
     id: UID,
     roles: Bag, // Dynamic storage for role assignments.
+    treasury_addr: address, // Address of the treasury cap for minting coins.
 }
 
 // Admin capability to create the vault
@@ -23,12 +25,12 @@ public struct PauserCap has drop, store {}
 public struct RoleKey<phantom C> has copy, drop, store { owner: address }
 
 fun init(ctx: &mut TxContext) {
+    let owner = tx_context::sender(ctx);
     let mut auth = Auth {
         id: object::new(ctx),
         roles: bag::new(ctx),
+        treasury_addr: owner
     };
-
-    let owner = tx_context::sender(ctx);
 
     auth
         .roles
@@ -81,6 +83,15 @@ public fun is_admin(auth: &Auth, owner: address): bool {
 
 public fun is_operator(auth: &Auth, owner: address): bool {
     has_cap<OperatorCap>(auth, owner)
+}
+
+public fun get_treasury_address(auth: &Auth): address {
+    auth.treasury_addr
+}
+
+public fun set_treasury_address(auth: &mut Auth, new_addr: address, ctx: &mut TxContext) {
+    assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
+    auth.treasury_addr = new_addr;
 }
 
 // === Private functions ===

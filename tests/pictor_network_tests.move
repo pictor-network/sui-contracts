@@ -63,6 +63,16 @@ fun test_pictor_network() {
 
     withdraw_pictor_coin(&mut ts, worker_owner, worker_balance);
 
+    ts.next_tx(admin);
+    let treasury_value = get_treasury_value(&ts);
+    assert!(treasury_value == USER_MINT_AMOUNT - worker_balance);
+
+    admin_withdraw_treasury(&mut ts, admin, treasury_value);
+    ts.next_tx(admin);
+    let treasury_value = get_treasury_value(&ts);
+     assert!(treasury_value == 0);
+    
+    
     ts.end();
 }
 
@@ -228,6 +238,27 @@ fun complete_job(ts: &mut Scenario, operator: address, job_id: vector<u8>) {
     assert!(is_completed);
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
+}
+
+fun admin_withdraw_treasury(
+    ts: &mut Scenario,
+    admin: address,
+    amount: u64,
+) {
+    test_utils::print(b"admin withdraw treasury");
+    ts.next_tx(admin);
+    let mut global = test_scenario::take_shared<GlobalData>(ts);
+    let auth = test_scenario::take_shared<Auth>(ts);
+    pictor_network::admin_withdraw_treasury(&auth, &mut global, amount, ts.ctx());
+    test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_shared<Auth>(auth);
+}
+
+fun get_treasury_value(ts: &Scenario): u64 {
+    let global = test_scenario::take_shared<GlobalData>(ts);
+    let treasury_value = pictor_network::get_treasury_value(&global);
+    test_scenario::return_shared<GlobalData>(global);
+    treasury_value
 }
 
 fun concat(str: vector<u8>, user: address): vector<u8> {

@@ -8,18 +8,20 @@ use sui::balance::{Self, Balance};
 use sui::coin::{Self, Coin};
 use sui::pay;
 use sui::table::{Self, Table};
+use pictor_network::pictor_manage::add_cap;
 
 const DENOMINATOR: u64 = 10000;
 const WORKER_EARNING_PERCENTAGE: u64 = 80;
 
 const ESystemPaused: u64 = 0;
-const EUserNotRegistered: u64 = 1;
-const EWorkerRegistered: u64 = 2;
-const EWorkerNotRegistered: u64 = 3;
-const EJobRegistered: u64 = 4;
-const EJobNotRegistered: u64 = 5;
-const EJobCompleted: u64 = 6;
-const EInsufficentBalance: u64 = 7;
+const EUnAuthorized: u64 = 1;
+const EUserNotRegistered: u64 = 2;
+const EWorkerRegistered: u64 = 3;
+const EWorkerNotRegistered: u64 = 4;
+const EJobRegistered: u64 = 5;
+const EJobNotRegistered: u64 = 6;
+const EJobCompleted: u64 = 7;
+const EInsufficentBalance: u64 = 8;
 
 public struct UserInfo has store {
     balance: u64,
@@ -246,9 +248,25 @@ public entry fun admin_set_pause_status(
     is_paused: bool,
     ctx: &mut TxContext,
 ) {
-    pictor_manage::is_admin(auth, tx_context::sender(ctx));
+    assert!(pictor_manage::is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
     global.is_paused = is_paused;
 }
+
+public entry fun admin_withdraw_treasury(
+    auth: &Auth,
+    global: &mut GlobalData,
+    amount: u64,
+    ctx: &mut TxContext,
+) {
+    check_not_paused(global);
+    assert!(pictor_manage::is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
+    assert!(balance::value(&global.vault) >= amount, EInsufficentBalance);
+
+    let withdrawn_balance = balance::split(&mut global.vault, amount);
+    let coin = coin::from_balance<PICTOR_COIN>(withdrawn_balance, ctx);
+    transfer::public_transfer(coin, pictor_manage::get_treasury_address(auth));
+}
+
 
 public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
     if (table::contains<address, UserInfo>(&global.users, user)) {
@@ -263,6 +281,10 @@ public fun get_job_info(global: &GlobalData, job_id: vector<u8>): (address, u64,
     assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
     let job = table::borrow<vector<u8>, Job>(&global.jobs, job_id);
     (job.owner, vector::length<Task>(&job.tasks), job.payment, job.is_completed)
+}
+
+public fun get_treasury_value(global: &GlobalData): u64 {
+    balance::value(&global.vault)
 }
 
 public fun calculate_worker_payment(payment: u64): u64 {
