@@ -12,6 +12,7 @@ use sui::balance;
 use sui::coin::{Self, Coin, TreasuryCap};
 use sui::test_scenario::{Self, ctx, Scenario};
 use sui::test_utils;
+use std::ascii::{Self, String};
 
 const USER_CREDIT: u64 = 10000000;
 const USER_MINT_AMOUNT: u64 = 1_000_000_000;
@@ -25,6 +26,8 @@ fun test_pictor_network() {
     let user = @0xC0FFEE;
     let worker_owner = @0xDEADBEEF;
     let mut ts = test_scenario::begin(admin);
+    let worker1 = b"worker1".to_ascii_string();
+    let job1 = b"job1".to_ascii_string();
 
     test_init(&mut ts, admin);
     mint_coin(&mut ts, admin, user, USER_MINT_AMOUNT);
@@ -33,15 +36,15 @@ fun test_pictor_network() {
     credit_user(&mut ts, operator, user, USER_CREDIT);
 
     // Register worker
-    register_worker(&mut ts, operator, worker_owner, b"worker1");
+    register_worker(&mut ts, operator, worker_owner, worker1);
 
     // operator should create job
-    create_job(&mut ts, operator, user, b"job1");
+    create_job(&mut ts, operator, user, job1);
 
     // operator should add task
-    add_task(&mut ts, operator, b"job1", 1, b"worker1");
+    add_task(&mut ts, operator, job1, 1, worker1);
 
-    complete_job(&mut ts, operator, b"job1");
+    complete_job(&mut ts, operator, job1);
 
     ts.next_tx(admin);
     let global = test_scenario::take_shared<GlobalData>(&ts);
@@ -166,7 +169,7 @@ fun register_worker(
     ts: &mut Scenario,
     operator: address,
     worker_owner: address,
-    worker_id: vector<u8>,
+    worker_id: String,
 ) {
     test_utils::print(b"register worker");
     ts.next_tx(operator);
@@ -184,7 +187,7 @@ fun register_worker(
     test_scenario::return_shared<Auth>(auth);
 }
 
-fun create_job(ts: &mut Scenario, operator: address, user: address, job_id: vector<u8>) {
+fun create_job(ts: &mut Scenario, operator: address, user: address, job_id: String) {
     test_utils::print(b"operator should create job");
     ts.next_tx(operator);
     let mut global = test_scenario::take_shared<GlobalData>(ts);
@@ -206,9 +209,9 @@ fun create_job(ts: &mut Scenario, operator: address, user: address, job_id: vect
 fun add_task(
     ts: &mut Scenario,
     operator: address,
-    job_id: vector<u8>,
+    job_id: String,
     task_id: u64,
-    worker_id: vector<u8>,
+    worker_id: String,
 ) {
     test_utils::print(b"operator should add task");
     ts.next_tx(operator);
@@ -228,7 +231,7 @@ fun add_task(
     test_scenario::return_shared<Auth>(auth);
 }
 
-fun complete_job(ts: &mut Scenario, operator: address, job_id: vector<u8>) {
+fun complete_job(ts: &mut Scenario, operator: address, job_id: String) {
     test_utils::print(b"operator should complete job");
     ts.next_tx(operator);
     let mut global = test_scenario::take_shared<GlobalData>(ts);

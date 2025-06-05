@@ -2,13 +2,13 @@
 module pictor_network::pictor_network;
 
 use pictor_network::pictor_coin::{Self, PICTOR_COIN};
-use pictor_network::pictor_manage::{Self, Auth, is_operator};
+use pictor_network::pictor_manage::{Self, Auth, is_operator, add_cap};
+use std::ascii::{Self, String};
 use std::debug;
 use sui::balance::{Self, Balance};
 use sui::coin::{Self, Coin};
 use sui::pay;
 use sui::table::{Self, Table};
-use pictor_network::pictor_manage::add_cap;
 
 const DENOMINATOR: u64 = 10000;
 const WORKER_EARNING_PERCENTAGE: u64 = 80;
@@ -36,7 +36,7 @@ public struct Worker has store {
 
 public struct Task has store {
     task_id: u64,
-    worker_id: vector<u8>,
+    worker_id: String,
     cost: u64,
     duration: u64,
 }
@@ -51,8 +51,8 @@ public struct Job has store {
 public struct GlobalData has key, store {
     id: UID,
     users: Table<address, UserInfo>,
-    workers: Table<vector<u8>, Worker>,
-    jobs: Table<vector<u8>, Job>,
+    workers: Table<String, Worker>,
+    jobs: Table<String, Job>,
     vault: Balance<PICTOR_COIN>,
     is_paused: bool,
 }
@@ -61,8 +61,8 @@ fun init(ctx: &mut TxContext) {
     let global = GlobalData {
         id: object::new(ctx),
         users: table::new<address, UserInfo>(ctx),
-        workers: table::new<vector<u8>, Worker>(ctx),
-        jobs: table::new<vector<u8>, Job>(ctx),
+        workers: table::new<String, Worker>(ctx),
+        jobs: table::new<String, Job>(ctx),
         vault: balance::zero<PICTOR_COIN>(),
         is_paused: false,
     };
@@ -118,13 +118,13 @@ public entry fun op_register_worker(
     auth: &Auth,
     global: &mut GlobalData,
     worker_owner: address,
-    worker_id: vector<u8>,
+    worker_id: String,
     ctx: &mut TxContext,
 ) {
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
     register_user_internal(global, worker_owner);
 
-    assert!(!table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerRegistered);
+    assert!(!table::contains<String, Worker>(&global.workers, worker_id), EWorkerRegistered);
 
     let worker = Worker {
         owner: worker_owner,
@@ -139,14 +139,14 @@ public entry fun op_create_job(
     auth: &Auth,
     global: &mut GlobalData,
     job_owner: address,
-    job_id: vector<u8>,
+    job_id: String,
     ctx: &mut TxContext,
 ) {
     check_not_paused(global);
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
     register_user_internal(global, job_owner);
 
-    assert!(!table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobRegistered);
+    assert!(!table::contains<String, Job>(&global.jobs, job_id), EJobRegistered);
 
     let job = Job {
         owner: job_owner,
@@ -160,17 +160,17 @@ public entry fun op_create_job(
 public entry fun op_add_task(
     auth: &Auth,
     global: &mut GlobalData,
-    job_id: vector<u8>,
+    job_id: String,
     task_id: u64,
-    worker_id: vector<u8>,
+    worker_id: String,
     cost: u64,
     duration: u64,
     ctx: &mut TxContext,
 ) {
     check_not_paused(global);
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
-    assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
-    assert!(table::contains<vector<u8>, Worker>(&global.workers, worker_id), EWorkerNotRegistered);
+    assert!(table::contains<String, Job>(&global.jobs, job_id), EJobNotRegistered);
+    assert!(table::contains<String, Worker>(&global.workers, worker_id), EWorkerNotRegistered);
 
     let task = Task {
         task_id,
@@ -179,7 +179,7 @@ public entry fun op_add_task(
         duration,
     };
     vector::push_back(
-        &mut table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id).tasks,
+        &mut table::borrow_mut<String, Job>(&mut global.jobs, job_id).tasks,
         task,
     );
 
@@ -199,19 +199,19 @@ public entry fun op_add_task(
         user_info.balance = user_info.balance - remaining_payment;
     };
 
-    let job = table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id);
+    let job = table::borrow_mut<String, Job>(&mut global.jobs, job_id);
     job.payment = job.payment + cost;
 }
 
 public entry fun op_complete_job(
     auth: &Auth,
     global: &mut GlobalData,
-    job_id: vector<u8>,
+    job_id: String,
     ctx: &mut TxContext,
 ) {
     check_not_paused(global);
     pictor_manage::is_operator(auth, tx_context::sender(ctx));
-    let job = table::borrow_mut<vector<u8>, Job>(&mut global.jobs, job_id);
+    let job = table::borrow_mut<String, Job>(&mut global.jobs, job_id);
     assert!(job.is_completed == false, EJobCompleted);
     job.is_completed = true;
 
@@ -220,7 +220,7 @@ public entry fun op_complete_job(
     while (i > 0) {
         i = i - 1;
         let task = &global.jobs[job_id].tasks[i];
-        let worker = table::borrow_mut<vector<u8>, Worker>(&mut global.workers, task.worker_id);
+        let worker = table::borrow_mut<String, Worker>(&mut global.workers, task.worker_id);
 
         // Add payment to worker's owner
         let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, worker.owner);
@@ -267,7 +267,6 @@ public entry fun admin_withdraw_treasury(
     transfer::public_transfer(coin, pictor_manage::get_treasury_address(auth));
 }
 
-
 public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
     if (table::contains<address, UserInfo>(&global.users, user)) {
         let user_info = table::borrow<address, UserInfo>(&global.users, user);
@@ -277,9 +276,9 @@ public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
     }
 }
 
-public fun get_job_info(global: &GlobalData, job_id: vector<u8>): (address, u64, u64, bool) {
-    assert!(table::contains<vector<u8>, Job>(&global.jobs, job_id), EJobNotRegistered);
-    let job = table::borrow<vector<u8>, Job>(&global.jobs, job_id);
+public fun get_job_info(global: &GlobalData, job_id: String): (address, u64, u64, bool) {
+    assert!(table::contains<String, Job>(&global.jobs, job_id), EJobNotRegistered);
+    let job = table::borrow<String, Job>(&global.jobs, job_id);
     (job.owner, vector::length<Task>(&job.tasks), job.payment, job.is_completed)
 }
 
