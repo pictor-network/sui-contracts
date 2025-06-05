@@ -6,7 +6,6 @@ const EUnAuthorized: u64 = 0;
 const ERecordExists: u64 = 1;
 const ENoAuthRecord: u64 = 2;
 
-
 public struct Auth has key {
     id: UID,
     roles: Bag, // Dynamic storage for role assignments.
@@ -49,13 +48,22 @@ fun init(ctx: &mut TxContext) {
     transfer::share_object(auth);
 }
 
-public fun add_capability<C: store + drop>(auth: &mut Auth, owner: address, cap: C, ctx: &mut TxContext) {
+public fun add_capability<C: store + drop>(
+    auth: &mut Auth,
+    owner: address,
+    cap: C,
+    ctx: &mut TxContext,
+) {
     assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
     assert!(!auth.has_cap<C>(owner), ERecordExists);
     auth.add_cap(owner, cap);
 }
 
-public fun remove_capability<C: store + drop>(auth: &mut Auth, owner: address, ctx: &mut TxContext) {
+public fun remove_capability<C: store + drop>(
+    auth: &mut Auth,
+    owner: address,
+    ctx: &mut TxContext,
+) {
     assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
     assert!(auth.has_cap<C>(owner), ENoAuthRecord);
     let _: C = auth.remove_cap(owner);
@@ -71,7 +79,7 @@ public fun add_operator(auth: &mut Auth, owner: address, ctx: &mut TxContext) {
         auth,
         owner,
         OperatorCap {},
-        ctx
+        ctx,
     );
 }
 
@@ -100,11 +108,7 @@ public fun get_paused_status(auth: &Auth): bool {
     auth.is_paused
 }
 
-public entry fun set_pause_status(
-    auth: &mut Auth,
-    is_paused: bool,
-    ctx: &mut TxContext,
-) {
+public entry fun set_pause_status(auth: &mut Auth, is_paused: bool, ctx: &mut TxContext) {
     assert!(is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
     auth.is_paused = is_paused;
 }
@@ -125,4 +129,3 @@ fun remove_cap<Cap: store + drop>(auth: &mut Auth, owner: address): Cap {
 public fun test_init(ctx: &mut TxContext) {
     init(ctx);
 }
-

@@ -101,7 +101,14 @@ fun test_init(ts: &mut Scenario, admin: address) {
     pictor_network::test_init(ts.ctx());
     pictor_coin::test_init(ts.ctx());
     ts.next_tx(admin);
+
     assert!(test_scenario::has_most_recent_shared<GlobalData>());
+    
+    let mut global = test_scenario::take_shared<GlobalData>(ts);
+    let auth = test_scenario::take_shared<Auth>(ts);
+    pictor_network::set_coin_type<PICTOR_COIN>(&auth, &mut global, ts.ctx());
+    test_scenario::return_shared<Auth>(auth);
+    test_scenario::return_shared<GlobalData>(global);
 }
 
 fun pause_system(ts: &mut Scenario, admin: address) {
@@ -126,7 +133,7 @@ fun deposit_pictor_coin(ts: &mut Scenario, user: address) {
     let auth = test_scenario::take_shared<Auth>(ts);
     let coin = test_scenario::take_from_sender<Coin<PICTOR_COIN>>(ts);
 
-    pictor_network::deposit_pictor_coin(&auth, &mut global, coin, ts.ctx());
+    pictor_network::deposit_coin<PICTOR_COIN>(&auth, &mut global, coin, ts.ctx());
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
 }
@@ -136,7 +143,7 @@ fun withdraw_pictor_coin(ts: &mut Scenario, user: address, amount: u64) {
     ts.next_tx(user);
     let mut global = test_scenario::take_shared<GlobalData>(ts);
     let auth = test_scenario::take_shared<Auth>(ts);
-    pictor_network::withdraw_pictor_coin(&auth, &mut global, amount, ts.ctx());
+    pictor_network::withdraw_coin<PICTOR_COIN>(&auth, &mut global, amount, ts.ctx());
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
 }
@@ -254,14 +261,14 @@ fun admin_withdraw_treasury(
     ts.next_tx(admin);
     let mut global = test_scenario::take_shared<GlobalData>(ts);
     let auth = test_scenario::take_shared<Auth>(ts);
-    pictor_network::admin_withdraw_treasury(&auth, &mut global, amount, ts.ctx());
+    pictor_network::admin_withdraw_treasury<PICTOR_COIN>(&auth, &mut global, amount, ts.ctx());
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
 }
 
 fun get_treasury_value(ts: &Scenario): u64 {
     let global = test_scenario::take_shared<GlobalData>(ts);
-    let treasury_value = pictor_network::get_treasury_value(&global);
+    let treasury_value = pictor_network::get_treasury_value<PICTOR_COIN>(&global);
     test_scenario::return_shared<GlobalData>(global);
     treasury_value
 }
