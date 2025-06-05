@@ -11,6 +11,7 @@ public struct Auth has key {
     id: UID,
     roles: Bag, // Dynamic storage for role assignments.
     treasury_addr: address, // Address of the treasury cap for minting coins.
+    is_paused: bool, // Global pause state for the network.
 }
 
 // Admin capability to create the vault
@@ -29,7 +30,8 @@ fun init(ctx: &mut TxContext) {
     let mut auth = Auth {
         id: object::new(ctx),
         roles: bag::new(ctx),
-        treasury_addr: owner
+        treasury_addr: owner,
+        is_paused: false,
     };
 
     auth
@@ -92,6 +94,19 @@ public fun get_treasury_address(auth: &Auth): address {
 public fun set_treasury_address(auth: &mut Auth, new_addr: address, ctx: &mut TxContext) {
     assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
     auth.treasury_addr = new_addr;
+}
+
+public fun get_paused_status(auth: &Auth): bool {
+    auth.is_paused
+}
+
+public entry fun set_pause_status(
+    auth: &mut Auth,
+    is_paused: bool,
+    ctx: &mut TxContext,
+) {
+    assert!(is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
+    auth.is_paused = is_paused;
 }
 
 // === Private functions ===

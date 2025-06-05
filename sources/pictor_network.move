@@ -54,7 +54,6 @@ public struct GlobalData has key, store {
     workers: Table<String, Worker>,
     jobs: Table<String, Job>,
     vault: Balance<PICTOR_COIN>,
-    is_paused: bool,
 }
 
 fun init(ctx: &mut TxContext) {
@@ -64,17 +63,17 @@ fun init(ctx: &mut TxContext) {
         workers: table::new<String, Worker>(ctx),
         jobs: table::new<String, Job>(ctx),
         vault: balance::zero<PICTOR_COIN>(),
-        is_paused: false,
     };
     transfer::share_object(global);
 }
 
 public entry fun deposit_pictor_coin(
+    auth: &Auth,
     global: &mut GlobalData,
     coin: Coin<PICTOR_COIN>,
     ctx: &mut TxContext,
 ) {
-    check_not_paused(global);
+    assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
     let sender = tx_context::sender(ctx);
     register_user_internal(global, sender);
     let amount = coin::value<PICTOR_COIN>(&coin);
@@ -86,8 +85,8 @@ public entry fun deposit_pictor_coin(
 }
 
 #[lint_allow(self_transfer)]
-public entry fun withdraw_pictor_coin(global: &mut GlobalData, amount: u64, ctx: &mut TxContext) {
-    check_not_paused(global);
+public entry fun withdraw_pictor_coin(auth: &Auth, global: &mut GlobalData, amount: u64, ctx: &mut TxContext) {
+    assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
     let sender = tx_context::sender(ctx);
     assert!(table::contains<address, UserInfo>(&global.users, sender), EUserNotRegistered);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, sender);
@@ -142,8 +141,8 @@ public entry fun op_create_job(
     job_id: String,
     ctx: &mut TxContext,
 ) {
-    check_not_paused(global);
-    pictor_manage::is_operator(auth, tx_context::sender(ctx));
+    assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
+    assert!(pictor_manage::is_operator(auth, tx_context::sender(ctx)), EUnAuthorized);
     register_user_internal(global, job_owner);
 
     assert!(!table::contains<String, Job>(&global.jobs, job_id), EJobRegistered);
@@ -167,8 +166,8 @@ public entry fun op_add_task(
     duration: u64,
     ctx: &mut TxContext,
 ) {
-    check_not_paused(global);
-    pictor_manage::is_operator(auth, tx_context::sender(ctx));
+    assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
+    assert!(pictor_manage::is_operator(auth, tx_context::sender(ctx)), EUnAuthorized);
     assert!(table::contains<String, Job>(&global.jobs, job_id), EJobNotRegistered);
     assert!(table::contains<String, Worker>(&global.workers, worker_id), EWorkerNotRegistered);
 
@@ -209,8 +208,8 @@ public entry fun op_complete_job(
     job_id: String,
     ctx: &mut TxContext,
 ) {
-    check_not_paused(global);
-    pictor_manage::is_operator(auth, tx_context::sender(ctx));
+    assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
+    assert!(pictor_manage::is_operator(auth, tx_context::sender(ctx)), EUnAuthorized);
     let job = table::borrow_mut<String, Job>(&mut global.jobs, job_id);
     assert!(job.is_completed == false, EJobCompleted);
     job.is_completed = true;
@@ -235,21 +234,11 @@ public entry fun op_credit_user(
     amount: u64,
     ctx: &mut TxContext,
 ) {
-    check_not_paused(global);
-    pictor_manage::is_operator(auth, tx_context::sender(ctx));
+    assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
+    assert!(pictor_manage::is_operator(auth, tx_context::sender(ctx)), EUnAuthorized);
     register_user_internal(global, user);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, user);
     user_info.credit = user_info.credit + amount;
-}
-
-public entry fun admin_set_pause_status(
-    auth: &Auth,
-    global: &mut GlobalData,
-    is_paused: bool,
-    ctx: &mut TxContext,
-) {
-    assert!(pictor_manage::is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
-    global.is_paused = is_paused;
 }
 
 public entry fun admin_withdraw_treasury(
@@ -258,7 +247,6 @@ public entry fun admin_withdraw_treasury(
     amount: u64,
     ctx: &mut TxContext,
 ) {
-    check_not_paused(global);
     assert!(pictor_manage::is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
     assert!(balance::value(&global.vault) >= amount, EInsufficentBalance);
 
@@ -288,10 +276,6 @@ public fun get_treasury_value(global: &GlobalData): u64 {
 
 public fun calculate_worker_payment(payment: u64): u64 {
     payment * WORKER_EARNING_PERCENTAGE / DENOMINATOR
-}
-
-fun check_not_paused(global: &GlobalData) {
-    assert!(!global.is_paused, ESystemPaused);
 }
 
 fun register_user_internal(global: &mut GlobalData, user: address) {

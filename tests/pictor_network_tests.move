@@ -106,10 +106,8 @@ fun test_init(ts: &mut Scenario, admin: address) {
 
 fun pause_system(ts: &mut Scenario, admin: address) {
     ts.next_tx(admin);
-    let mut global = test_scenario::take_shared<GlobalData>(ts);
-    let auth = test_scenario::take_shared<Auth>(ts);
-    pictor_network::admin_set_pause_status(&auth, &mut global, true, ts.ctx());
-    test_scenario::return_shared<GlobalData>(global);
+    let mut auth = test_scenario::take_shared<Auth>(ts);
+    pictor_manage::set_pause_status(&mut auth, true, ts.ctx());
     test_scenario::return_shared<Auth>(auth);
 }
 
@@ -125,18 +123,22 @@ fun deposit_pictor_coin(ts: &mut Scenario, user: address) {
     test_utils::print(concat(b"deposit coin from: ", user));
     ts.next_tx(user);
     let mut global = test_scenario::take_shared<GlobalData>(ts);
+    let auth = test_scenario::take_shared<Auth>(ts);
     let coin = test_scenario::take_from_sender<Coin<PICTOR_COIN>>(ts);
 
-    pictor_network::deposit_pictor_coin(&mut global, coin, ts.ctx());
+    pictor_network::deposit_pictor_coin(&auth, &mut global, coin, ts.ctx());
     test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_shared<Auth>(auth);
 }
 
 fun withdraw_pictor_coin(ts: &mut Scenario, user: address, amount: u64) {
     test_utils::print(concat(b"withdraw coin from: ", user));
     ts.next_tx(user);
     let mut global = test_scenario::take_shared<GlobalData>(ts);
-    pictor_network::withdraw_pictor_coin(&mut global, amount, ts.ctx());
+    let auth = test_scenario::take_shared<Auth>(ts);
+    pictor_network::withdraw_pictor_coin(&auth, &mut global, amount, ts.ctx());
     test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_shared<Auth>(auth);
 }
 
 fun add_operator(ts: &mut Scenario, admin: address, operator: address) {
