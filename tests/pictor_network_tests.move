@@ -28,10 +28,12 @@ fun test_pictor_network() {
     let mut ts = test_scenario::begin(admin);
     let worker1 = b"worker1".to_ascii_string();
     let job1 = b"job1".to_ascii_string();
+    let percentage = 7000; // 80% of earnings
 
     test_init(&mut ts, admin);
     mint_coin(&mut ts, admin, user, USER_MINT_AMOUNT);
     add_operator(&mut ts, admin, operator);
+    set_worker_earning_percentage(&mut ts, admin, percentage);
     deposit_pictor_coin(&mut ts, user);
     credit_user(&mut ts, operator, user, USER_CREDIT);
 
@@ -48,6 +50,7 @@ fun test_pictor_network() {
 
     ts.next_tx(admin);
     let global = test_scenario::take_shared<GlobalData>(&ts);
+    let auth = test_scenario::take_shared<Auth>(&ts);
     let (_, user_credit) = pictor_network::get_user_info(
         &global,
         user,
@@ -60,9 +63,10 @@ fun test_pictor_network() {
         worker_owner,
     );
 
-    assert!(worker_balance == pictor_network::calculate_worker_payment(WORKER_COST));
+    assert!(worker_balance == WORKER_COST * percentage / 10000);
 
     test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_shared<Auth>(auth);
 
     withdraw_pictor_coin(&mut ts, worker_owner, worker_balance);
 
@@ -115,6 +119,18 @@ fun pause_system(ts: &mut Scenario, admin: address) {
     ts.next_tx(admin);
     let mut auth = test_scenario::take_shared<Auth>(ts);
     pictor_manage::set_pause_status(&mut auth, true, ts.ctx());
+    test_scenario::return_shared<Auth>(auth);
+}
+
+fun set_worker_earning_percentage(
+    ts: &mut Scenario,
+    admin: address,
+    percentage: u64,
+) {
+    test_utils::print(b"set worker earning percentage: ");
+    ts.next_tx(admin);
+    let mut auth = test_scenario::take_shared<Auth>(ts);
+    pictor_manage::set_worker_earning_percentage(&mut auth, percentage, ts.ctx());
     test_scenario::return_shared<Auth>(auth);
 }
 

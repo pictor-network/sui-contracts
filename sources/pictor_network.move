@@ -4,14 +4,11 @@ module pictor_network::pictor_network;
 use pictor_network::pictor_manage::{Self, Auth, is_operator, add_cap};
 use std::ascii::{Self, String};
 use std::debug;
+use sui::bag::{Self, Bag};
 use sui::balance::{Self, Balance};
 use sui::coin::{Self, Coin};
 use sui::pay;
 use sui::table::{Self, Table};
-use sui::bag::{Self, Bag};
-
-const DENOMINATOR: u64 = 10000;
-const WORKER_EARNING_PERCENTAGE: u64 = 80;
 
 const ESystemPaused: u64 = 0;
 const EUnAuthorized: u64 = 1;
@@ -88,13 +85,18 @@ public entry fun deposit_coin<CoinType>(
     let amount = coin::value<CoinType>(&coin);
     assert!(amount > 0, EInsufficentBalance);
     let deposited_balance = coin::into_balance(coin);
-    balance::join(global.vault.borrow_mut(CoinKey<CoinType>{}), deposited_balance);
+    balance::join(global.vault.borrow_mut(CoinKey<CoinType> {}), deposited_balance);
     let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, sender);
     user_info.balance = user_info.balance + amount;
 }
 
 #[lint_allow(self_transfer)]
-public entry fun withdraw_coin<CoinType>(auth: &Auth, global: &mut GlobalData, amount: u64, ctx: &mut TxContext) {
+public entry fun withdraw_coin<CoinType>(
+    auth: &Auth,
+    global: &mut GlobalData,
+    amount: u64,
+    ctx: &mut TxContext,
+) {
     assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
     let sender = tx_context::sender(ctx);
     assert!(table::contains<address, UserInfo>(&global.users, sender), EUserNotRegistered);
@@ -102,7 +104,7 @@ public entry fun withdraw_coin<CoinType>(auth: &Auth, global: &mut GlobalData, a
     assert!(user_info.balance >= amount, EInsufficentBalance);
 
     user_info.balance = user_info.balance - amount;
-    let withdrawn_balance = balance::split(global.vault.borrow_mut(CoinKey<CoinType>{}), amount);
+    let withdrawn_balance = balance::split(global.vault.borrow_mut(CoinKey<CoinType> {}), amount);
     let coin = coin::from_balance<CoinType>(withdrawn_balance, ctx);
     transfer::public_transfer(coin, sender);
 }
@@ -232,7 +234,8 @@ public entry fun op_complete_job(
 
         // Add payment to worker's owner
         let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, worker.owner);
-        user_info.balance = user_info.balance + calculate_worker_payment(task.cost );
+        user_info.balance =
+            user_info.balance + pictor_manage::calculate_worker_payment(auth, task.cost );
     };
 }
 
@@ -257,7 +260,10 @@ public entry fun admin_withdraw_treasury<CoinType>(
     ctx: &mut TxContext,
 ) {
     assert!(pictor_manage::is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
-    let vault = bag::borrow_mut<CoinKey<CoinType>, Balance<CoinType>>(&mut global.vault, CoinKey<CoinType>{});
+    let vault = bag::borrow_mut<CoinKey<CoinType>, Balance<CoinType>>(
+        &mut global.vault,
+        CoinKey<CoinType> {},
+    );
     assert!(balance::value(vault) >= amount, EInsufficentBalance);
 
     let withdrawn_balance = balance::split(vault, amount);
@@ -281,12 +287,11 @@ public fun get_job_info(global: &GlobalData, job_id: String): (address, u64, u64
 }
 
 public fun get_treasury_value<CoinType>(global: &GlobalData): u64 {
-    let vault = bag::borrow<CoinKey<CoinType>, Balance<CoinType>>(& global.vault, CoinKey<CoinType>{});
+    let vault = bag::borrow<CoinKey<CoinType>, Balance<CoinType>>(
+        &global.vault,
+        CoinKey<CoinType> {},
+    );
     balance::value(vault)
-}
-
-public fun calculate_worker_payment(payment: u64): u64 {
-    payment * WORKER_EARNING_PERCENTAGE / DENOMINATOR
 }
 
 fun register_user_internal(global: &mut GlobalData, user: address) {

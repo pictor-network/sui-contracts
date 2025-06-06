@@ -2,6 +2,9 @@ module pictor_network::pictor_manage;
 
 use sui::bag::{Self, Bag};
 
+const DENOMINATOR: u64 = 10000;
+const WORKER_EARNING_PERCENTAGE: u64 = 8000;
+
 const EUnAuthorized: u64 = 0;
 const ERecordExists: u64 = 1;
 const ENoAuthRecord: u64 = 2;
@@ -11,6 +14,7 @@ public struct Auth has key {
     roles: Bag, // Dynamic storage for role assignments.
     treasury_addr: address, // Address of the treasury cap for minting coins.
     is_paused: bool, // Global pause state for the network.
+    worker_earning_percentage: u64, // Percentage of earnings for workers.
 }
 
 // Admin capability to create the vault
@@ -31,6 +35,7 @@ fun init(ctx: &mut TxContext) {
         roles: bag::new(ctx),
         treasury_addr: owner,
         is_paused: false,
+        worker_earning_percentage: WORKER_EARNING_PERCENTAGE,
     };
 
     auth
@@ -93,6 +98,16 @@ public fun is_admin(auth: &Auth, owner: address): bool {
 
 public fun is_operator(auth: &Auth, owner: address): bool {
     has_cap<OperatorCap>(auth, owner)
+}
+
+public fun calculate_worker_payment(auth: &Auth, payment: u64): u64 {
+    payment * auth.worker_earning_percentage / DENOMINATOR
+}
+
+public fun set_worker_earning_percentage(auth: &mut Auth, percentage: u64, ctx: &mut TxContext) {
+    assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
+    assert!(percentage <= DENOMINATOR, EUnAuthorized);
+    auth.worker_earning_percentage = percentage;
 }
 
 public fun get_treasury_address(auth: &Auth): address {
