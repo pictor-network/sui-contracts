@@ -1,4 +1,5 @@
 #[allow(unused_use)]
+
 module pictor_network::pictor_network;
 
 use pictor_network::pictor_manage::{Self, Auth, is_operator, add_cap};
@@ -21,11 +22,13 @@ const EJobCompleted: u64 = 7;
 const EInsufficentBalance: u64 = 8;
 const ERecordExists: u64 = 9;
 
+// Store user's balance and credit. User can use both to pay for tasks, but can withdraw only balance.
 public struct UserInfo has store {
     balance: u64,
     credit: u64,
 }
 
+// Store worker's information.
 public struct Worker has store {
     owner: address,
     staked: u64,
@@ -46,6 +49,7 @@ public struct Job has store {
     is_completed: bool,
 }
 
+// Global data structure that holds all the network state.
 public struct GlobalData has key, store {
     id: UID,
     users: Table<address, UserInfo>,
@@ -54,6 +58,7 @@ public struct GlobalData has key, store {
     vault: Bag,
 }
 
+// Use as the key of a CoinType
 public struct CoinKey<phantom C> has copy, drop, store {}
 
 fun init(ctx: &mut TxContext) {
@@ -67,12 +72,15 @@ fun init(ctx: &mut TxContext) {
     transfer::share_object(global);
 }
 
+// This function is to register the vault for a specific CoinType.
 public fun set_coin_type<CoinType>(auth: &Auth, global: &mut GlobalData, ctx: &mut TxContext) {
     assert!(pictor_manage::is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
     assert!(!global.vault.contains(CoinKey<CoinType> {}), ERecordExists);
     global.vault.add(CoinKey<CoinType> {}, balance::zero<CoinType>());
 }
 
+//  User calls this function to deposit coins into the network.
+//  @dev: This function doesn't use an exchange rate
 public entry fun deposit_coin<CoinType>(
     auth: &Auth,
     global: &mut GlobalData,
@@ -91,6 +99,8 @@ public entry fun deposit_coin<CoinType>(
 }
 
 #[lint_allow(self_transfer)]
+// This function allows users to withdraw coins from the network.
+// @dev: This function doesn't use an exchange rate
 public entry fun withdraw_coin<CoinType>(
     auth: &Auth,
     global: &mut GlobalData,
@@ -109,11 +119,13 @@ public entry fun withdraw_coin<CoinType>(
     transfer::public_transfer(coin, sender);
 }
 
+// User can register themselves in the network.
 public entry fun register_user(global: &mut GlobalData, ctx: &mut TxContext) {
     let sender = tx_context::sender(ctx);
     register_user_internal(global, sender);
 }
 
+// Operator can register a user in the network.
 public entry fun op_register_user(
     auth: &Auth,
     global: &mut GlobalData,
@@ -124,6 +136,7 @@ public entry fun op_register_user(
     register_user_internal(global, user);
 }
 
+// Operator can register a worker in the network.
 public entry fun op_register_worker(
     auth: &Auth,
     global: &mut GlobalData,
@@ -145,6 +158,7 @@ public entry fun op_register_worker(
     table::add(&mut global.workers, worker_id, worker);
 }
 
+// Create a job in the network.
 public entry fun op_create_job(
     auth: &Auth,
     global: &mut GlobalData,
@@ -167,6 +181,8 @@ public entry fun op_create_job(
     table::add(&mut global.jobs, job_id, job);
 }
 
+// Add done taskes to a job. The user's balance and credit will be deducted accordingly.
+// But the worker's payment will not be transferred until the job is completed.
 public entry fun op_add_task(
     auth: &Auth,
     global: &mut GlobalData,
@@ -213,6 +229,7 @@ public entry fun op_add_task(
     job.payment = job.payment + cost;
 }
 
+// Complete a job. This will transfer the payment to the workers' owners.
 public entry fun op_complete_job(
     auth: &Auth,
     global: &mut GlobalData,
@@ -239,6 +256,8 @@ public entry fun op_complete_job(
     };
 }
 
+// Operator can credit a user with a certain amount of credit.
+// @dev: this can be abused to give users credit without requiring them to deposit coins.
 public entry fun op_credit_user(
     auth: &Auth,
     global: &mut GlobalData,
@@ -253,6 +272,7 @@ public entry fun op_credit_user(
     user_info.credit = user_info.credit + amount;
 }
 
+// Admin can withdraw the treasury balance of a specific CoinType.
 public entry fun admin_withdraw_treasury<CoinType>(
     auth: &Auth,
     global: &mut GlobalData,
@@ -271,6 +291,7 @@ public entry fun admin_withdraw_treasury<CoinType>(
     transfer::public_transfer(coin, pictor_manage::get_treasury_address(auth));
 }
 
+// Get user's balance and credit.
 public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
     if (table::contains<address, UserInfo>(&global.users, user)) {
         let user_info = table::borrow<address, UserInfo>(&global.users, user);
@@ -280,12 +301,14 @@ public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
     }
 }
 
+// Get worker's information. It will return owner address, number of tasks, total payment so far, and completion status.
 public fun get_job_info(global: &GlobalData, job_id: String): (address, u64, u64, bool) {
     assert!(table::contains<String, Job>(&global.jobs, job_id), EJobNotRegistered);
     let job = table::borrow<String, Job>(&global.jobs, job_id);
     (job.owner, vector::length<Task>(&job.tasks), job.payment, job.is_completed)
 }
 
+// Get value of a coin type in the treasury.
 public fun get_treasury_value<CoinType>(global: &GlobalData): u64 {
     let vault = bag::borrow<CoinKey<CoinType>, Balance<CoinType>>(
         &global.vault,

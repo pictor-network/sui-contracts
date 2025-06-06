@@ -2,13 +2,14 @@ module pictor_network::pictor_manage;
 
 use sui::bag::{Self, Bag};
 
-const DENOMINATOR: u64 = 10000;
-const WORKER_EARNING_PERCENTAGE: u64 = 8000;
+const DENOMINATOR: u64 = 10000; // 100% in basis points
+const WORKER_EARNING_PERCENTAGE: u64 = 8000; // Default worker earning percentage (80%)
 
 const EUnAuthorized: u64 = 0;
 const ERecordExists: u64 = 1;
 const ENoAuthRecord: u64 = 2;
 
+// This to store configuration of the network
 public struct Auth has key {
     id: UID,
     roles: Bag, // Dynamic storage for role assignments.
@@ -17,9 +18,10 @@ public struct Auth has key {
     worker_earning_percentage: u64, // Percentage of earnings for workers.
 }
 
-// Admin capability to create the vault
+// Admin capability
 public struct AdminCap has drop, store {}
 
+// Operator capability
 public struct OperatorCap has drop, store {}
 
 /// Allows global pause and unpause of coin transactions.
@@ -53,6 +55,7 @@ fun init(ctx: &mut TxContext) {
     transfer::share_object(auth);
 }
 
+// Add capability for a user, must be called by an admin.
 public fun add_capability<C: store + drop>(
     auth: &mut Auth,
     owner: address,
@@ -64,6 +67,7 @@ public fun add_capability<C: store + drop>(
     auth.add_cap(owner, cap);
 }
 
+// Remove capability for a user, must be called by an admin.
 public fun remove_capability<C: store + drop>(
     auth: &mut Auth,
     owner: address,
@@ -79,6 +83,7 @@ public fun has_cap<Cap: store>(auth: &Auth, owner: address): bool {
     auth.roles.contains(RoleKey<Cap> { owner })
 }
 
+// Add Operator capability for a user, must be called by an admin.
 public fun add_operator(auth: &mut Auth, owner: address, ctx: &mut TxContext) {
     add_capability<OperatorCap>(
         auth,
@@ -88,6 +93,7 @@ public fun add_operator(auth: &mut Auth, owner: address, ctx: &mut TxContext) {
     );
 }
 
+// Remove Operator capability for a user, must be called by an admin.
 public fun remove_operator(auth: &mut Auth, operator: address, ctx: &mut TxContext) {
     remove_capability<OperatorCap>(auth, operator, ctx);
 }
@@ -100,10 +106,12 @@ public fun is_operator(auth: &Auth, owner: address): bool {
     has_cap<OperatorCap>(auth, owner)
 }
 
+// Helper function to calculate worker payment based on the configured percentage.
 public fun calculate_worker_payment(auth: &Auth, payment: u64): u64 {
     payment * auth.worker_earning_percentage / DENOMINATOR
 }
 
+// Set the worker earning percentage, must be called by an admin.
 public fun set_worker_earning_percentage(auth: &mut Auth, percentage: u64, ctx: &mut TxContext) {
     assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
     assert!(percentage <= DENOMINATOR, EUnAuthorized);
@@ -114,7 +122,8 @@ public fun get_treasury_address(auth: &Auth): address {
     auth.treasury_addr
 }
 
-public fun set_treasury_address(auth: &mut Auth, new_addr: address, ctx: &mut TxContext) {
+// Set the treasury address, must be called by an admin.
+public entry fun set_treasury_address(auth: &mut Auth, new_addr: address, ctx: &mut TxContext) {
     assert!(auth.has_cap<AdminCap>(tx_context::sender(ctx)), EUnAuthorized);
     auth.treasury_addr = new_addr;
 }
@@ -123,6 +132,7 @@ public fun get_paused_status(auth: &Auth): bool {
     auth.is_paused
 }
 
+// Set the global pause status, must be called by an admin.
 public entry fun set_pause_status(auth: &mut Auth, is_paused: bool, ctx: &mut TxContext) {
     assert!(is_admin(auth, tx_context::sender(ctx)), EUnAuthorized);
     auth.is_paused = is_paused;
