@@ -106,9 +106,12 @@ public fun is_operator(auth: &Auth, owner: address): bool {
     has_cap<OperatorCap>(auth, owner)
 }
 
-// Helper function to calculate worker payment based on the configured percentage.
-public fun calculate_worker_payment(auth: &Auth, payment: u64): u64 {
-    payment * auth.worker_earning_percentage / DENOMINATOR
+public fun get_worker_earning_percentage(auth: &Auth): u64 {
+    auth.worker_earning_percentage
+}
+
+public fun get_denominator(): u64 {
+    DENOMINATOR
 }
 
 // Set the worker earning percentage, must be called by an admin.

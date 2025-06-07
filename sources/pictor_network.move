@@ -5,6 +5,7 @@ module pictor_network::pictor_network;
 use pictor_network::pictor_manage::{Self, Auth, is_operator, add_cap};
 use std::ascii::{Self, String};
 use std::debug;
+use std::u64;
 use sui::bag::{Self, Bag};
 use sui::balance::{Self, Balance};
 use sui::coin::{Self, Coin};
@@ -241,6 +242,8 @@ public entry fun op_complete_job(
     let job = table::borrow_mut<String, Job>(&mut global.jobs, job_id);
     assert!(job.is_completed == false, EJobCompleted);
     job.is_completed = true;
+    let worker_percentage = pictor_manage::get_worker_earning_percentage(auth);
+    let denominator = pictor_manage::get_denominator();
 
     // loop through tasks and calculate worker payments for each worker's owner
     let mut i = vector::length(&global.jobs[job_id].tasks);
@@ -251,8 +254,7 @@ public entry fun op_complete_job(
 
         // Add payment to worker's owner
         let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, worker.owner);
-        user_info.balance =
-            user_info.balance + pictor_manage::calculate_worker_payment(auth, task.cost );
+        user_info.balance = user_info.balance + task.cost * worker_percentage / denominator;
     };
 }
 
@@ -301,11 +303,40 @@ public fun get_user_info(global: &GlobalData, user: address): (u64, u64) {
     }
 }
 
-// Get worker's information. It will return owner address, number of tasks, total payment so far, and completion status.
+// Get job's information. It will return owner address, number of tasks, total payment so far, and completion status.
 public fun get_job_info(global: &GlobalData, job_id: String): (address, u64, u64, bool) {
     assert!(table::contains<String, Job>(&global.jobs, job_id), EJobNotRegistered);
     let job = table::borrow<String, Job>(&global.jobs, job_id);
     (job.owner, vector::length<Task>(&job.tasks), job.payment, job.is_completed)
+}
+
+// Get job's information by worker_id. It will return number of tasks, total payment for the worker, and completion status.
+// @returns (task_count, payment, is_completed)
+public fun get_job_info_by_worker(
+    auth: &Auth,
+    global: &GlobalData,
+    job_id: String,
+    worker_id: String,
+): (u64, u64, bool) {
+    assert!(table::contains<String, Job>(&global.jobs, job_id), EJobNotRegistered);
+    let job = table::borrow<String, Job>(&global.jobs, job_id);
+    let mut task_count = 0;
+    let mut payment = 0;
+    let worker_percentage = pictor_manage::get_worker_earning_percentage(auth);
+    let denominator = pictor_manage::get_denominator();
+
+    // loop through tasks and calculate worker payments for each worker's owner
+    let mut i = vector::length(&job.tasks);
+    while (i > 0) {
+        i = i - 1;
+        let task = &job.tasks[i];
+        if (task.worker_id == worker_id) {
+            task_count = task_count + 1;
+            payment = payment + task.cost;
+        }
+    };
+
+    (task_count, payment * worker_percentage / denominator, job.is_completed)
 }
 
 // Get value of a coin type in the treasury.

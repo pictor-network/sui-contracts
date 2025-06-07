@@ -13,6 +13,7 @@ use sui::coin::{Self, Coin, TreasuryCap};
 use sui::test_scenario::{Self, ctx, Scenario};
 use sui::test_utils;
 use std::ascii::{Self, String};
+use sui::table;
 
 const USER_CREDIT: u64 = 10000000;
 const USER_MINT_AMOUNT: u64 = 1_000_000_000;
@@ -28,7 +29,8 @@ fun test_pictor_network() {
     let mut ts = test_scenario::begin(admin);
     let worker1 = b"worker1".to_ascii_string();
     let job1 = b"job1".to_ascii_string();
-    let percentage = 7000; // 80% of earnings
+    let percentage = 7000; // 70% of earnings
+    let deminonator = 10000; // 100% in basis points
 
     test_init(&mut ts, admin);
     mint_coin(&mut ts, admin, user, USER_MINT_AMOUNT);
@@ -45,6 +47,9 @@ fun test_pictor_network() {
 
     // operator should add task
     add_task(&mut ts, operator, job1, 1, worker1);
+
+    let (task_count, payment, is_completed) = get_job_info_by_worker(&mut ts, operator, job1, worker1);
+    assert!(task_count == 1 && payment == WORKER_COST*percentage/deminonator && !is_completed);
 
     complete_job(&mut ts, operator, job1);
 
@@ -63,7 +68,7 @@ fun test_pictor_network() {
         worker_owner,
     );
 
-    assert!(worker_balance == WORKER_COST * percentage / 10000);
+    assert!(worker_balance == WORKER_COST * percentage / deminonator);
 
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
@@ -266,6 +271,21 @@ fun complete_job(ts: &mut Scenario, operator: address, job_id: String) {
     assert!(is_completed);
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
+}
+
+fun get_job_info_by_worker(
+    ts: &mut Scenario,
+    operator: address,
+    job_id:String,
+    worker_id: String,
+): (u64, u64, bool) {
+    ts.next_tx(operator);
+    let global = test_scenario::take_shared<GlobalData>(ts);
+    let auth = test_scenario::take_shared<Auth>(ts);
+    let (task_count, payment, is_completed) = pictor_network::get_job_info_by_worker(&auth, &global, job_id, worker_id);
+    test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_shared<Auth>(auth);
+    (task_count, payment, is_completed)
 }
 
 fun admin_withdraw_treasury(
