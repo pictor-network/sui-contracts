@@ -5,15 +5,15 @@ module pictor_network::pictor_network_tests;
 use pictor_network::pictor_coin::{Self, PICTOR_COIN};
 use pictor_network::pictor_manage::{Self, Auth, is_operator};
 use pictor_network::pictor_network::{Self, GlobalData, ESystemPaused};
+use std::ascii::{Self, String};
 use std::debug;
 use std::unit_test::assert_eq;
 use sui::address::{Self, to_string};
 use sui::balance;
 use sui::coin::{Self, Coin, TreasuryCap};
+use sui::table;
 use sui::test_scenario::{Self, ctx, Scenario};
 use sui::test_utils;
-use std::ascii::{Self, String};
-use sui::table;
 
 const USER_CREDIT: u64 = 10000000;
 const USER_MINT_AMOUNT: u64 = 1_000_000_000;
@@ -48,30 +48,35 @@ fun test_pictor_network() {
     // operator should add task
     add_task(&mut ts, operator, job1, 1, worker1);
 
-    let (task_count, payment, is_completed) = get_job_info_by_worker(&mut ts, operator, job1, worker1);
+    let (task_count, payment, is_completed) = get_job_info_by_worker(
+        &mut ts,
+        operator,
+        job1,
+        worker1,
+    );
     assert!(task_count == 1 && payment == WORKER_COST*percentage/deminonator && !is_completed);
 
     complete_job(&mut ts, operator, job1);
 
-    ts.next_tx(admin);
-    let global = test_scenario::take_shared<GlobalData>(&ts);
-    let auth = test_scenario::take_shared<Auth>(&ts);
-    let (_, user_credit) = pictor_network::get_user_info(
-        &global,
+    let (_, user_credit) = get_user_info(
+        &mut ts,
         user,
     );
 
-    assert!(user_credit == USER_CREDIT - WORKER_COST);
+    let user_remaining_credit = USER_CREDIT - WORKER_COST;
 
-    let (worker_balance, _) = pictor_network::get_user_info(
-        &global,
+    assert!(user_credit == user_remaining_credit);
+
+    let (worker_balance, _) = get_user_info(
+        &mut ts,
         worker_owner,
     );
 
     assert!(worker_balance == WORKER_COST * percentage / deminonator);
 
-    test_scenario::return_shared<GlobalData>(global);
-    test_scenario::return_shared<Auth>(auth);
+    debit_user(&mut ts, operator, user, 1_000_000);
+    let (_, user_credit) = get_user_info(&mut ts, user);
+    assert!(user_credit == user_remaining_credit - 1_000_000);
 
     withdraw_pictor_coin(&mut ts, worker_owner, worker_balance);
 
@@ -82,9 +87,8 @@ fun test_pictor_network() {
     admin_withdraw_treasury(&mut ts, admin, treasury_value);
     ts.next_tx(admin);
     let treasury_value = get_treasury_value(&ts);
-     assert!(treasury_value == 0);
-    
-    
+    assert!(treasury_value == 0);
+
     ts.end();
 }
 
@@ -112,7 +116,7 @@ fun test_init(ts: &mut Scenario, admin: address) {
     ts.next_tx(admin);
 
     assert!(test_scenario::has_most_recent_shared<GlobalData>());
-    
+
     let mut global = test_scenario::take_shared<GlobalData>(ts);
     let auth = test_scenario::take_shared<Auth>(ts);
     pictor_network::set_coin_type<PICTOR_COIN>(&auth, &mut global, ts.ctx());
@@ -127,11 +131,7 @@ fun pause_system(ts: &mut Scenario, admin: address) {
     test_scenario::return_shared<Auth>(auth);
 }
 
-fun set_worker_earning_percentage(
-    ts: &mut Scenario,
-    admin: address,
-    percentage: u64,
-) {
+fun set_worker_earning_percentage(ts: &mut Scenario, admin: address, percentage: u64) {
     test_utils::print(b"set worker earning percentage: ");
     ts.next_tx(admin);
     let mut auth = test_scenario::take_shared<Auth>(ts);
@@ -193,6 +193,24 @@ fun credit_user(ts: &mut Scenario, operator: address, user: address, amount: u64
     assert!(balance == USER_MINT_AMOUNT && credit == amount);
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
+}
+
+fun debit_user(ts: &mut Scenario, operator: address, user: address, amount: u64): (u64, u64) {
+    test_utils::print(b"operator should debit user");
+    ts.next_tx(operator);
+    let mut global = test_scenario::take_shared<GlobalData>(ts);
+    let auth = test_scenario::take_shared<Auth>(ts);
+    pictor_network::op_debit_user(
+        &auth,
+        &mut global,
+        user,
+        amount,
+        ts.ctx(),
+    );
+    let (balance, credit) = pictor_network::get_user_info(&global, user);
+    test_scenario::return_shared<GlobalData>(global);
+    test_scenario::return_shared<Auth>(auth);
+    (balance, credit)
 }
 
 fun register_worker(
@@ -276,23 +294,32 @@ fun complete_job(ts: &mut Scenario, operator: address, job_id: String) {
 fun get_job_info_by_worker(
     ts: &mut Scenario,
     operator: address,
-    job_id:String,
+    job_id: String,
     worker_id: String,
 ): (u64, u64, bool) {
     ts.next_tx(operator);
     let global = test_scenario::take_shared<GlobalData>(ts);
     let auth = test_scenario::take_shared<Auth>(ts);
-    let (task_count, payment, is_completed) = pictor_network::get_job_info_by_worker(&auth, &global, job_id, worker_id);
+    let (task_count, payment, is_completed) = pictor_network::get_job_info_by_worker(
+        &auth,
+        &global,
+        job_id,
+        worker_id,
+    );
     test_scenario::return_shared<GlobalData>(global);
     test_scenario::return_shared<Auth>(auth);
     (task_count, payment, is_completed)
 }
 
-fun admin_withdraw_treasury(
-    ts: &mut Scenario,
-    admin: address,
-    amount: u64,
-) {
+fun get_user_info(ts: &mut Scenario, user: address): (u64, u64) {
+    ts.next_tx(user);
+    let global = test_scenario::take_shared<GlobalData>(ts);
+    let (balance, credit) = pictor_network::get_user_info(&global, user);
+    test_scenario::return_shared<GlobalData>(global);
+    (balance, credit)
+}
+
+fun admin_withdraw_treasury(ts: &mut Scenario, admin: address, amount: u64) {
     test_utils::print(b"admin withdraw treasury");
     ts.next_tx(admin);
     let mut global = test_scenario::take_shared<GlobalData>(ts);

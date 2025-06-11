@@ -3,7 +3,7 @@ module pictor_network::pictor_manage;
 use sui::bag::{Self, Bag};
 
 const DENOMINATOR: u64 = 10000; // 100% in basis points
-const WORKER_EARNING_PERCENTAGE: u64 = 8000; // Default worker earning percentage (80%)
+const WORKER_EARNING_PERCENTAGE: u64 = 6000; // Default worker earning percentage (60%)
 
 const EUnAuthorized: u64 = 0;
 const ERecordExists: u64 = 1;

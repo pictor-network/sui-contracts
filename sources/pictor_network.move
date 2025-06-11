@@ -274,6 +274,22 @@ public entry fun op_credit_user(
     user_info.credit = user_info.credit + amount;
 }
 
+// Operator can debit a user with a certain amount of credit.
+public entry fun op_debit_user(
+    auth: &Auth,
+    global: &mut GlobalData,
+    user: address,
+    amount: u64,
+    ctx: &mut TxContext,
+) {
+    assert!(!pictor_manage::get_paused_status(auth), ESystemPaused);
+    assert!(pictor_manage::is_operator(auth, tx_context::sender(ctx)), EUnAuthorized);
+    assert!(table::contains<address, UserInfo>(&global.users, user), EUserNotRegistered);
+    let user_info = table::borrow_mut<address, UserInfo>(&mut global.users, user);
+    assert!(user_info.credit >= amount, EInsufficentBalance);
+    user_info.credit = user_info.credit - amount;
+}
+
 // Admin can withdraw the treasury balance of a specific CoinType.
 public entry fun admin_withdraw_treasury<CoinType>(
     auth: &Auth,
